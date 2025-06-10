@@ -5,7 +5,7 @@ if (!defined('ADMIN_AREA')) {
 $current_page = sanitize_input($_GET['page'] ?? 'dashboard');
 ?>
 <!-- Sidebar -->
-<aside id="adminSidebar" class="w-64 bg-white shadow-lg fixed top-16 right-0 z-30 md:top-0 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out print:hidden overflow-y-auto h-[calc(100vh-4rem)] md:h-screen">
+<aside id="adminSidebar" class="w-64 bg-white shadow-lg fixed top-16 right-0 z-30 md:top-0 transform translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out print:hidden overflow-y-auto h-[calc(100vh-4rem)] md:h-screen"> {/* RTL Change: -translate-x-full to translate-x-full for initial off-screen right */}
     <div class="flex flex-col h-full">
         <div class="p-4 flex-grow">
             <!-- Logo / Branding -->
@@ -21,7 +21,7 @@ $current_page = sanitize_input($_GET['page'] ?? 'dashboard');
             <!-- Main Navigation -->
             <nav class="space-y-1">
                 <a href="<?php echo base_url('admin/index.php?page=dashboard'); ?>" class="sidebar-link <?php echo ($current_page === 'dashboard') ? 'active' : ''; ?>">
-                    <i data-feather="home" class="ml-3"></i>
+                    <i data-feather="home" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                     <span>لوحة التحكم</span>
                 </a>
 
@@ -30,23 +30,23 @@ $current_page = sanitize_input($_GET['page'] ?? 'dashboard');
                     <h3 class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">إدارة المحتوى</h3>
                     <div class="space-y-1">
                         <a href="<?php echo base_url('admin/index.php?page=sections'); ?>" class="sidebar-link <?php echo ($current_page === 'sections' || $current_page === 'homepage_sections') ? 'active' : ''; ?>">
-                            <i data-feather="layout" class="ml-3"></i>
+                            <i data-feather="layout" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                             <span>أقسام الموقع</span>
                         </a>
                         <a href="<?php echo base_url('admin/index.php?page=services'); ?>" class="sidebar-link <?php echo ($current_page === 'services') ? 'active' : ''; ?>">
-                            <i data-feather="briefcase" class="ml-3"></i>
+                            <i data-feather="briefcase" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                             <span>الخدمات</span>
                         </a>
                         <a href="<?php echo base_url('admin/index.php?page=projects'); ?>" class="sidebar-link <?php echo ($current_page === 'projects') ? 'active' : ''; ?>">
-                            <i data-feather="archive" class="ml-3"></i>
+                            <i data-feather="archive" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                             <span>المشاريع</span>
                         </a>
                         <a href="<?php echo base_url('admin/index.php?page=testimonials'); ?>" class="sidebar-link <?php echo ($current_page === 'testimonials') ? 'active' : ''; ?>">
-                            <i data-feather="message-square" class="ml-3"></i>
+                            <i data-feather="message-square" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                             <span>آراء العملاء</span>
                         </a>
                         <a href="<?php echo base_url('admin/index.php?page=facts'); ?>" class="sidebar-link <?php echo ($current_page === 'facts') ? 'active' : ''; ?>">
-                            <i data-feather="bar-chart-2" class="ml-3"></i>
+                            <i data-feather="bar-chart-2" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                             <span>الحقائق والأرقام</span>
                         </a>
                     </div>
@@ -57,15 +57,15 @@ $current_page = sanitize_input($_GET['page'] ?? 'dashboard');
                     <h3 class="px-3 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">الإعدادات</h3>
                     <div class="space-y-1">
                         <a href="<?php echo base_url('admin/index.php?page=site_settings'); ?>" class="sidebar-link <?php echo ($current_page === 'site_settings') ? 'active' : ''; ?>">
-                            <i data-feather="tool" class="ml-3"></i>
+                            <i data-feather="tool" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                             <span>إعدادات الموقع</span>
                         </a>
                         <a href="<?php echo base_url('admin/index.php?page=users'); ?>" class="sidebar-link <?php echo ($current_page === 'users') ? 'active' : ''; ?>">
-                            <i data-feather="users" class="ml-3"></i>
+                            <i data-feather="users" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                             <span>إدارة المستخدمين</span>
                         </a>
                         <a href="<?php echo base_url('admin/index.php?page=change_password'); ?>" class="sidebar-link <?php echo ($current_page === 'change_password') ? 'active' : ''; ?>">
-                            <i data-feather="lock" class="ml-3"></i>
+                            <i data-feather="lock" class="mr-3"></i> {/* RTL Change: ml-3 to mr-3 */}
                             <span>تغيير كلمة المرور</span>
                         </a>
                     </div>
@@ -76,7 +76,7 @@ $current_page = sanitize_input($_GET['page'] ?? 'dashboard');
         <!-- Footer Links -->
         <div class="p-4 border-t border-gray-200">
             <a href="<?php echo base_url(''); ?>" target="_blank" class="flex items-center justify-center md:justify-start text-sm text-gray-600 hover:text-pink-600 transition-colors">
-                <i data-feather="external-link" class="ml-2 h-4 w-4"></i>
+                <i data-feather="external-link" class="mr-2 h-4 w-4"></i> {/* RTL Change: ml-2 to mr-2 */}
                 <span>عرض الموقع العام</span>
             </a>
         </div>
@@ -91,12 +91,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if(mobileMenuButton && sidebar) {
         mobileMenuButton.addEventListener('click', function() {
-            sidebar.classList.toggle('-translate-x-full');
+            sidebar.classList.toggle('translate-x-full'); // RTL Change: from -translate-x-full
             sidebar.classList.toggle('translate-x-0');
             
             // Change icon based on state
             const icon = mobileMenuButton.querySelector('i');
-            if(sidebar.classList.contains('-translate-x-full')) {
+            if(sidebar.classList.contains('translate-x-full')) { // RTL Change: from -translate-x-full
                 icon.setAttribute('data-feather', 'menu');
             } else {
                 icon.setAttribute('data-feather', 'x');
@@ -107,9 +107,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Close sidebar when clicking outside on mobile
     document.addEventListener('click', function(event) {
-        if(window.innerWidth < 768 && sidebar && !sidebar.contains(event.target) && 
+        if(window.innerWidth < 768 && sidebar && !sidebar.classList.contains('translate-x-full') && // Check if sidebar is open
+           !sidebar.contains(event.target) &&
            event.target !== mobileMenuButton && !mobileMenuButton.contains(event.target)) {
-            sidebar.classList.add('-translate-x-full');
+            sidebar.classList.add('translate-x-full'); // RTL Change: from -translate-x-full
             sidebar.classList.remove('translate-x-0');
             
             const icon = mobileMenuButton.querySelector('i');

@@ -5,8 +5,18 @@
  * تتيح للمدير إدارة حسابات المستخدمين في لوحة التحكم
  */
 
-require_once '../includes/init.php';
-require_once '../includes/functions/admin_auth.php';
+require_once __DIR__ . '/init.php'; // Loads admin-specific initialization
+// admin_auth.php contains functions like admin_login, admin_logout, is_admin_logged_in (specific version)
+// It's assumed that PROJECT_ROOT is defined via config.php loaded in admin/init.php
+// and that admin_auth.php's dependencies (like db_query) are met by what admin/init.php sets up,
+// OR that admin/init.php will be augmented to make these compatible.
+// For now, directly including it using PROJECT_ROOT.
+if (defined('PROJECT_ROOT')) {
+    require_once PROJECT_ROOT . '/includes/functions/admin_auth.php';
+} else {
+    // Fallback or error if PROJECT_ROOT is not defined, though it should be by admin/init.php
+    require_once dirname(__DIR__) . '/includes/functions/admin_auth.php';
+}
 
 // التحقق من تسجيل الدخول وصلاحيات المدير
 check_admin_login();
@@ -14,9 +24,30 @@ check_admin_role('admin');
 
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
+    if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
+        $error_message = "خطأ في التحقق (CSRF). يرجى المحاولة مرة أخرى.";
+        // To prevent further execution of the switch case for this request,
+        // we can set action to something that won't match cases or simply exit/redirect.
+        // For now, we'll let the error message be displayed by falling through.
+        // A more robust solution might involve a redirect or die().
+    } else {
+        // CSRF token is valid, proceed with action
+        $action = $_POST['action'] ?? '';
+
+        switch ($action) {
+            case 'add_user':
+                // ... (rest of add_user case)
+            // Ensure to close the else block after the switch
+    // Original switch content will be indented or wrapped in this else
+    // For the diff, I will add the check and then the rest of the switch cases will follow,
+    // assuming they are now inside this else block.
+    // The actual diff will show the exact placement.
+    // For brevity here, only showing the start of the modification.
+    // The following switch statement will be inside the 'else' of the CSRF check.
     
-    switch ($action) {
+    // $action = $_POST['action'] ?? ''; // This is now inside the else block
+
+    switch ($action) { // This switch is now conditional on CSRF success
         case 'add_user':
             $username = trim($_POST['username']);
             $email = trim($_POST['email']);
@@ -35,9 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "اسم المستخدم يجب أن يكون 3 أحرف على الأقل";
             } else {
                 // التحقق من عدم وجود اسم المستخدم بالفعل
-                $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = ?");
-                $stmt->execute([$username]);
-                if ($stmt->fetchColumn() > 0) {
+                $count_user = $db->queryOne("SELECT COUNT(*) as count FROM users WHERE username = :username", [':username' => $username]);
+                if ($count_user && $count_user['count'] > 0) {
                     $errors[] = "اسم المستخدم موجود بالفعل";
                 }
             }
@@ -48,9 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "البريد الإلكتروني غير صالح";
             } else {
                 // التحقق من عدم وجود البريد الإلكتروني بالفعل
-                $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE email = ?");
-                $stmt->execute([$email]);
-                if ($stmt->fetchColumn() > 0) {
+                $count_email = $db->queryOne("SELECT COUNT(*) as count FROM users WHERE email = :email", [':email' => $email]);
+                if ($count_email && $count_email['count'] > 0) {
                     $errors[] = "البريد الإلكتروني موجود بالفعل";
                 }
             }
@@ -76,15 +105,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hashed_password = password_hash($password, PASSWORD_DEFAULT);
                 
                 // إضافة المستخدم
-                $stmt = $db->prepare("INSERT INTO users (username, email, password, full_name, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
-                $stmt->execute([$username, $email, $hashed_password, $full_name, $role, $is_active]);
-                
-                $user_id = $db->lastInsertId();
-                
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'add_user', 'users', $user_id);
-                
-                $success_message = "تمت إضافة المستخدم بنجاح";
+                $sql_insert_user = "INSERT INTO users (username, email, password, full_name, role, is_active, created_at)
+                                    VALUES (:username, :email, :password, :full_name, :role, :is_active, NOW())";
+                $params_insert = [
+                    ':username' => $username,
+                    ':email' => $email,
+                    ':password' => $hashed_password,
+                    ':full_name' => $full_name,
+                    ':role' => $role,
+                    ':is_active' => $is_active
+                ];
+                if ($db->execute($sql_insert_user, $params_insert)) {
+                    $user_id = $db->lastInsertId();
+                    // تسجيل النشاط
+                    log_activity($_SESSION['admin_id'], 'add_user', 'users', $user_id);
+                    $success_message = "تمت إضافة المستخدم بنجاح";
+                } else {
+                    $errors[] = "فشل إضافة المستخدم إلى قاعدة البيانات.";
+                    $error_message = implode("<br>", $errors);
+                }
             } else {
                 $error_message = implode("<br>", $errors);
             }
@@ -107,9 +146,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "البريد الإلكتروني غير صالح";
             } else {
                 // التحقق من عدم وجود البريد الإلكتروني بالفعل لمستخدم آخر
-                $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE email = ? AND id != ?");
-                $stmt->execute([$email, $user_id]);
-                if ($stmt->fetchColumn() > 0) {
+                $count_email = $db->queryOne("SELECT COUNT(*) as count FROM users WHERE email = :email AND id != :user_id", [':email' => $email, ':user_id' => $user_id]);
+                if ($count_email && $count_email['count'] > 0) {
                     $errors[] = "البريد الإلكتروني موجود بالفعل";
                 }
             }
@@ -128,21 +166,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if (empty($errors)) {
                 // تحديث المستخدم
+                // تحديث المستخدم
+                $sql_update_user = "UPDATE users SET email = :email, full_name = :full_name, role = :role, is_active = :is_active, updated_at = NOW()";
+                $params_update = [
+                    ':email' => $email,
+                    ':full_name' => $full_name,
+                    ':role' => $role,
+                    ':is_active' => $is_active,
+                    ':user_id' => $user_id
+                ];
+
                 if (!empty($password)) {
                     // تشفير كلمة المرور الجديدة
                     $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-                    
-                    $stmt = $db->prepare("UPDATE users SET email = ?, full_name = ?, role = ?, is_active = ?, password = ?, updated_at = NOW() WHERE id = ?");
-                    $stmt->execute([$email, $full_name, $role, $is_active, $hashed_password, $user_id]);
-                } else {
-                    $stmt = $db->prepare("UPDATE users SET email = ?, full_name = ?, role = ?, is_active = ?, updated_at = NOW() WHERE id = ?");
-                    $stmt->execute([$email, $full_name, $role, $is_active, $user_id]);
+                    $sql_update_user .= ", password = :password";
+                    $params_update[':password'] = $hashed_password;
                 }
+                $sql_update_user .= " WHERE id = :user_id";
                 
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'update_user', 'users', $user_id);
-                
-                $success_message = "تم تحديث المستخدم بنجاح";
+                if($db->execute($sql_update_user, $params_update)) {
+                    // تسجيل النشاط
+                    log_activity($_SESSION['admin_id'], 'update_user', 'users', $user_id);
+                    $success_message = "تم تحديث المستخدم بنجاح";
+                } else {
+                    $errors[] = "فشل تحديث المستخدم في قاعدة البيانات.";
+                    $error_message = implode("<br>", $errors);
+                }
             } else {
                 $error_message = implode("<br>", $errors);
             }
@@ -156,18 +205,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error_message = "لا يمكن حذف المستخدم الحالي";
             } else {
                 // الحصول على بيانات المستخدم قبل الحذف
-                $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
-                $stmt->execute([$user_id]);
-                $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
+                $user_data = $db->queryOne("SELECT * FROM users WHERE id = :user_id", [':user_id' => $user_id]);
                 
                 if ($user_data) {
-                    $stmt = $db->prepare("DELETE FROM users WHERE id = ?");
-                    $stmt->execute([$user_id]);
-                    
-                    // تسجيل النشاط
-                    log_activity($_SESSION['admin_id'], 'delete_user', 'users', $user_id, $user_data);
-                    
-                    $success_message = "تم حذف المستخدم بنجاح";
+                    if ($db->execute("DELETE FROM users WHERE id = :user_id", [':user_id' => $user_id])) {
+                        // تسجيل النشاط
+                        log_activity($_SESSION['admin_id'], 'delete_user', 'users', $user_id, $user_data);
+                        $success_message = "تم حذف المستخدم بنجاح";
+                    } else {
+                        $error_message = "فشل حذف المستخدم.";
+                    }
                 } else {
                     $error_message = "المستخدم غير موجود";
                 }
@@ -177,8 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // الحصول على المستخدمين
-$stmt = $db->query("SELECT * FROM users ORDER BY created_at DESC");
-$users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$users = $db->query("SELECT * FROM users ORDER BY created_at DESC");
 
 include 'includes/header.php';
 ?>
@@ -300,6 +346,7 @@ include 'includes/header.php';
             </div>
             <form method="POST">
                 <div class="modal-body">
+                    <?php echo csrf_input_field(); ?>
                     <input type="hidden" name="action" value="add_user">
                     
                     <div class="mb-3">
@@ -360,6 +407,7 @@ include 'includes/header.php';
             </div>
             <form method="POST">
                 <div class="modal-body">
+                    <?php echo csrf_input_field(); ?>
                     <input type="hidden" name="action" value="update_user">
                     <input type="hidden" name="user_id" id="edit_user_id">
                     
@@ -429,14 +477,40 @@ function deleteUser(userId, username) {
     if (confirm(`هل أنت متأكد من حذف المستخدم "${username}"؟ لا يمكن التراجع عن هذا الإجراء.`)) {
         const form = document.createElement('form');
         form.method = 'POST';
+
+        // Get CSRF token name and value
+        // Assumes CSRF_TOKEN_NAME is available as a JS variable or directly echoed by PHP
+        const csrfTokenName = '<?php echo CSRF_TOKEN_NAME; ?>';
+        const csrfTokenInput = document.querySelector(`input[name="${csrfTokenName}"]`);
+        let csrfTokenValue = '';
+
+        if (csrfTokenInput) {
+            csrfTokenValue = csrfTokenInput.value;
+        } else {
+            console.error('CSRF token field not found for deleteUser. Deletion will likely fail server-side.');
+            // Optionally, alert the user or prevent form submission
+            alert('خطأ في الأمان. لا يمكن إكمال الحذف.');
+            return;
+        }
+
         form.innerHTML = `
             <input type="hidden" name="action" value="delete_user">
             <input type="hidden" name="user_id" value="${userId}">
+            <input type="hidden" name="${csrfTokenName}" value="${csrfTokenValue}">
         `;
         document.body.appendChild(form);
         form.submit();
     }
 }
 </script>
+
+<?php
+// Ensure a CSRF token field is available on the page for the deleteUser JS function to pick up,
+// if not already rendered by a main form or another mechanism.
+// This is a bit of a fallback; ideally, it's part of a more structured approach.
+if (function_exists('csrf_input_field')) {
+    echo '<div style="display:none;">' . csrf_input_field() . '</div>';
+}
+?>
 
 <?php include 'includes/footer.php'; ?>

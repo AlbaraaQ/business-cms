@@ -7,16 +7,28 @@
  */
 
 // تضمين ملف التهيئة
-require_once '../includes/init.php';
+require_once __DIR__ . '/init.php'; // Loads admin-specific initialization
 
 // تضمين ملفات الوظائف اللازمة
-require_once FUNCTIONS_DIR . '/admin_images_functions.php';
-require_once FUNCTIONS_DIR . '/admin_seo_functions.php';
-require_once FUNCTIONS_DIR . '/project_functions.php';
+// Assuming PROJECT_ROOT is defined in admin/init.php via config.php
+// and that FUNCTIONS_DIR would correspond to PROJECT_ROOT . '/includes/functions'
+if (defined('PROJECT_ROOT')) {
+    require_once PROJECT_ROOT . '/includes/functions/admin_images_functions.php';
+    require_once PROJECT_ROOT . '/includes/functions/admin_seo_functions.php';
+    require_once PROJECT_ROOT . '/includes/functions/project_functions.php';
+} else {
+    // Fallback or error if PROJECT_ROOT is not defined
+    // This part will likely cause issues if PROJECT_ROOT isn't defined,
+    // as FUNCTIONS_DIR would not be defined either.
+    trigger_error("PROJECT_ROOT not defined, cannot include function files for projects_management.php", E_USER_WARNING);
+}
+
 
 // التحقق من تسجيل دخول المدير
+// is_admin_logged_in() is expected to be available via admin/init.php (from includes/functions.php)
+// or one of the includes above.
 if (!is_admin_logged_in()) {
-    redirect('login_form.php');
+    redirect('login_form.php'); // redirect() also needs to be available.
 }
 
 // تعيين عنوان الصفحة
@@ -262,7 +274,11 @@ function handle_add_project() {
                     'updated_at' => date('Y-m-d H:i:s')
                 ];
                 
-                db_insert('seo_settings', $seo_data);
+                // db_insert('seo_settings', $seo_data);
+                $columns_seo = implode(', ', array_keys($seo_data));
+                $placeholders_seo = ':' . implode(', :', array_keys($seo_data));
+                $sql_seo_insert = "INSERT INTO seo_settings ($columns_seo) VALUES ($placeholders_seo)";
+                $db->execute($sql_seo_insert, $seo_data);
                 
                 // إعادة التوجيه إلى صفحة إدارة الصور
                 redirect('projects_management.php?action=manage_images&id=' . $project_id . '&success=1');
@@ -555,14 +571,27 @@ function handle_edit_project() {
                 
                 if ($seo_settings) {
                     // تحديث إعدادات SEO الموجودة
-                    db_update('seo_settings', $seo_data, 'entity_type = ? AND entity_id = ?', ['project', $project_id]);
+                    // db_update('seo_settings', $seo_data, 'entity_type = ? AND entity_id = ?', ['project', $project_id]);
+                    $seo_update_clauses = [];
+                    foreach (array_keys($seo_data) as $key) {
+                        $seo_update_clauses[] = "$key = :$key";
+                    }
+                    $sql_seo_update = "UPDATE seo_settings SET " . implode(', ', $seo_update_clauses) . " WHERE entity_type = :entity_type_condition AND entity_id = :entity_id_condition";
+                    $seo_data_for_execute = $seo_data;
+                    $seo_data_for_execute['entity_type_condition'] = 'project';
+                    $seo_data_for_execute['entity_id_condition'] = $project_id;
+                    $db->execute($sql_seo_update, $seo_data_for_execute);
                 } else {
                     // إضافة إعدادات SEO جديدة
                     $seo_data['entity_type'] = 'project';
                     $seo_data['entity_id'] = $project_id;
                     $seo_data['created_at'] = date('Y-m-d H:i:s');
                     
-                    db_insert('seo_settings', $seo_data);
+                    // db_insert('seo_settings', $seo_data);
+                    $columns_seo = implode(', ', array_keys($seo_data));
+                    $placeholders_seo = ':' . implode(', :', array_keys($seo_data));
+                    $sql_seo_insert = "INSERT INTO seo_settings ($columns_seo) VALUES ($placeholders_seo)";
+                    $db->execute($sql_seo_insert, $seo_data);
                 }
                 
                 // إعادة التوجيه مع رسالة نجاح
@@ -985,7 +1014,8 @@ function handle_project_seo_settings() {
         // إذا لم تكن هناك أخطاء، حدث الإعدادات
         if (empty($errors)) {
             // تحديث slug في جدول المشاريع
-            db_update('projects', ['slug' => $slug], 'project_id = ?', [$project_id]);
+            // db_update('projects', ['slug' => $slug], 'project_id = ?', [$project_id]);
+            $db->execute("UPDATE projects SET slug = :slug WHERE project_id = :project_id", [':slug' => $slug, ':project_id' => $project_id]);
             
             // تحضير بيانات SEO
             $seo_data = [
@@ -997,14 +1027,27 @@ function handle_project_seo_settings() {
             
             if ($seo_settings) {
                 // تحديث إعدادات SEO الموجودة
-                db_update('seo_settings', $seo_data, 'entity_type = ? AND entity_id = ?', ['project', $project_id]);
+                // db_update('seo_settings', $seo_data, 'entity_type = ? AND entity_id = ?', ['project', $project_id]);
+                $seo_update_clauses = [];
+                foreach (array_keys($seo_data) as $key) {
+                    $seo_update_clauses[] = "$key = :$key";
+                }
+                $sql_seo_update = "UPDATE seo_settings SET " . implode(', ', $seo_update_clauses) . " WHERE entity_type = :entity_type_condition AND entity_id = :entity_id_condition";
+                $seo_data_for_execute = $seo_data;
+                $seo_data_for_execute['entity_type_condition'] = 'project';
+                $seo_data_for_execute['entity_id_condition'] = $project_id;
+                $db->execute($sql_seo_update, $seo_data_for_execute);
             } else {
                 // إضافة إعدادات SEO جديدة
                 $seo_data['entity_type'] = 'project';
                 $seo_data['entity_id'] = $project_id;
                 $seo_data['created_at'] = date('Y-m-d H:i:s');
                 
-                db_insert('seo_settings', $seo_data);
+                // db_insert('seo_settings', $seo_data);
+                $columns_seo = implode(', ', array_keys($seo_data));
+                $placeholders_seo = ':' . implode(', :', array_keys($seo_data));
+                $sql_seo_insert = "INSERT INTO seo_settings ($columns_seo) VALUES ($placeholders_seo)";
+                $db->execute($sql_seo_insert, $seo_data);
             }
             
             // إعادة التوجيه مع رسالة نجاح

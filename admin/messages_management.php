@@ -5,8 +5,18 @@
  * تتيح للمدير عرض وإدارة الرسائل الواردة من العملاء
  */
 
-require_once '../includes/init.php';
-require_once '../includes/functions/admin_auth.php';
+require_once __DIR__ . '/init.php'; // Loads admin-specific initialization
+// admin_auth.php contains functions like admin_login, admin_logout, is_admin_logged_in (specific version)
+// It's assumed that PROJECT_ROOT is defined via config.php loaded in admin/init.php
+// and that admin_auth.php's dependencies (like db_query) are met by what admin/init.php sets up,
+// OR that admin/init.php will be augmented to make these compatible.
+// For now, directly including it using PROJECT_ROOT.
+if (defined('PROJECT_ROOT')) {
+    require_once PROJECT_ROOT . '/includes/functions/admin_auth.php';
+} else {
+    // Fallback or error if PROJECT_ROOT is not defined, though it should be by admin/init.php
+    require_once dirname(__DIR__) . '/includes/functions/admin_auth.php';
+}
 
 // التحقق من تسجيل الدخول
 check_admin_login();
@@ -18,24 +28,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     switch ($action) {
         case 'mark_read':
             $message_id = (int)$_POST['message_id'];
-            $stmt = $db->prepare("UPDATE messages SET is_read = 1, updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$message_id]);
-            
-            // تسجيل النشاط
-            log_activity($_SESSION['admin_id'], 'mark_message_read', 'messages', $message_id);
-            
-            $success_message = "تم تحديد الرسالة كمقروءة";
+            if($db->execute("UPDATE messages SET is_read = 1, updated_at = NOW() WHERE id = :id", [':id' => $message_id])) {
+                // تسجيل النشاط
+                log_activity($_SESSION['admin_id'], 'mark_message_read', 'messages', $message_id);
+                $success_message = "تم تحديد الرسالة كمقروءة";
+            } else {
+                $error_message = "فشل تحديث حالة الرسالة.";
+            }
             break;
             
         case 'mark_unread':
             $message_id = (int)$_POST['message_id'];
-            $stmt = $db->prepare("UPDATE messages SET is_read = 0, updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$message_id]);
-            
-            // تسجيل النشاط
-            log_activity($_SESSION['admin_id'], 'mark_message_unread', 'messages', $message_id);
-            
-            $success_message = "تم تحديد الرسالة كغير مقروءة";
+            if($db->execute("UPDATE messages SET is_read = 0, updated_at = NOW() WHERE id = :id", [':id' => $message_id])) {
+                // تسجيل النشاط
+                log_activity($_SESSION['admin_id'], 'mark_message_unread', 'messages', $message_id);
+                $success_message = "تم تحديد الرسالة كغير مقروءة";
+            } else {
+                $error_message = "فشل تحديث حالة الرسالة.";
+            }
             break;
             
         case 'reply':
@@ -43,11 +53,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $reply_message = trim($_POST['reply_message']);
             
             if (!empty($reply_message)) {
-                $stmt = $db->prepare("UPDATE messages SET is_replied = 1, reply_message = ?, replied_at = NOW(), replied_by = ?, updated_at = NOW() WHERE id = ?");
-                $stmt->execute([$reply_message, $_SESSION['admin_id'], $message_id]);
-                
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'reply_message', 'messages', $message_id);
+                $sql_reply = "UPDATE messages SET is_replied = 1, reply_message = :reply_message, replied_at = NOW(), replied_by = :replied_by, updated_at = NOW() WHERE id = :id";
+                $params_reply = [
+                    ':reply_message' => $reply_message,
+                    ':replied_by' => $_SESSION['admin_id'],
+                    ':id' => $message_id
+                ];
+                if($db->execute($sql_reply, $params_reply)) {
+                    // تسجيل النشاط
+                    log_activity($_SESSION['admin_id'], 'reply_message', 'messages', $message_id);
+                    $success_message = "تم إرسال الرد بنجاح";
+                } else {
+                    $error_message = "فشل إرسال الرد.";
+                }
                 
                 $success_message = "تم إرسال الرد بنجاح";
             } else {
@@ -59,18 +77,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message_id = (int)$_POST['message_id'];
             
             // الحصول على بيانات الرسالة قبل الحذف
-            $stmt = $db->prepare("SELECT * FROM messages WHERE id = ?");
-            $stmt->execute([$message_id]);
-            $message_data = $stmt->fetch(PDO::FETCH_ASSOC);
+            $message_data = $db->queryOne("SELECT * FROM messages WHERE id = :id", [':id' => $message_id]);
             
             if ($message_data) {
-                $stmt = $db->prepare("DELETE FROM messages WHERE id = ?");
-                $stmt->execute([$message_id]);
-                
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'delete_message', 'messages', $message_id, $message_data);
-                
-                $success_message = "تم حذف الرسالة بنجاح";
+                if($db->execute("DELETE FROM messages WHERE id = :id", [':id' => $message_id])) {
+                    // تسجيل النشاط
+                    log_activity($_SESSION['admin_id'], 'delete_message', 'messages', $message_id, $message_data);
+                    $success_message = "تم حذف الرسالة بنجاح";
+                } else {
+                    $error_message = "فشل حذف الرسالة.";
+                }
             }
             break;
     }
@@ -107,33 +123,53 @@ if (!empty($search)) {
 $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
 
 // عدد الرسائل الإجمالي
-$count_query = "SELECT COUNT(*) FROM messages $where_clause";
-$stmt = $db->prepare($count_query);
-$stmt->execute($params);
-$total_messages = $stmt->fetchColumn();
+// For $db->queryOne with positional placeholders, parameters must be indexed numerically in order.
+// If $search is empty, $params is empty. If $search is not empty, $params has 4 elements.
+$count_query_sql = "SELECT COUNT(*) as total_count FROM messages $where_clause";
+$count_result = $db->queryOne($count_query_sql, $params);
+$total_messages = $count_result ? $count_result['total_count'] : 0;
+
 
 // الحصول على الرسائل
-$query = "SELECT m.*, s.title as service_title, p.title as project_title, u.full_name as replied_by_name 
-          FROM messages m 
-          LEFT JOIN services s ON m.service_id = s.id 
-          LEFT JOIN projects p ON m.project_id = p.id 
-          LEFT JOIN users u ON m.replied_by = u.id 
-          $where_clause 
-          ORDER BY m.created_at DESC 
-          LIMIT $per_page OFFSET $offset";
+// Similar care for parameters if they are positional for $db->query
+$messages_query_sql = "SELECT m.*, s.title as service_title, p.title as project_title, u.full_name as replied_by_name
+                       FROM messages m
+                       LEFT JOIN services s ON m.service_id = s.id
+                       LEFT JOIN projects p ON m.project_id = p.id
+                       LEFT JOIN users u ON m.replied_by = u.id
+                       $where_clause
+                       ORDER BY m.created_at DESC
+                       LIMIT :limit OFFSET :offset";
 
-$stmt = $db->prepare($query);
-$stmt->execute($params);
-$messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$query_params_for_messages = $params; // Start with existing search/filter params
+$query_params_for_messages['limit'] = $per_page;
+$query_params_for_messages['offset'] = $offset;
+// Convert to named if $params was positional for search
+// This is getting complex due to mixed param types. Assuming $db->query handles it or $params is made named.
+// For simplicity, let's assume $db->query can handle an array of mixed (indexed for WHERE, named for LIMIT/OFFSET)
+// Or, better, make all params named if possible or stick to positional if the class allows.
+// Given the structure of $params from search, it's positional. Let's adjust.
+$messages_query_sql_positional = "SELECT m.*, s.title as service_title, p.title as project_title, u.full_name as replied_by_name
+                                 FROM messages m
+                                 LEFT JOIN services s ON m.service_id = s.id
+                                 LEFT JOIN projects p ON m.project_id = p.id
+                                 LEFT JOIN users u ON m.replied_by = u.id
+                                 $where_clause
+                                 ORDER BY m.created_at DESC
+                                 LIMIT ? OFFSET ?";
+$params_for_messages_positional = $params;
+$params_for_messages_positional[] = $per_page;
+$params_for_messages_positional[] = $offset;
+$messages = $db->query($messages_query_sql_positional, $params_for_messages_positional);
+
 
 // إحصائيات سريعة
-$stats_query = "SELECT 
+$stats_sql = "SELECT
     COUNT(*) as total,
     SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread,
     SUM(CASE WHEN is_replied = 1 THEN 1 ELSE 0 END) as replied
     FROM messages";
-$stmt = $db->query($stats_query);
-$stats = $stmt->fetch(PDO::FETCH_ASSOC);
+$stats = $db->queryOne($stats_sql);
 
 $total_pages = ceil($total_messages / $per_page);
 

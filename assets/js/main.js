@@ -1,5 +1,5 @@
 const API_BASE_URL = '/public/api.php'; // المسار المطلق
-let UPLOAD_URL_PREFIX = 'uploads/'; // Default, will be updated from settings
+let UPLOAD_URL_PREFIX = (window.APP_SETTINGS && window.APP_SETTINGS.uploadUrl) ? window.APP_SETTINGS.uploadUrl : 'uploads/'; // Use global var from PHP
 
 // Function to fetch data from the API
 async function fetchData(action, params = {}) {
@@ -49,7 +49,9 @@ async function loadSiteLayoutData() {
     if (data.success && data.data) {
         const { settings, sections: homepageSections, services_summary } = data.data; // Removed unused variables
         
-        UPLOAD_URL_PREFIX = settings.upload_url_prefix || 'uploads/'; // Ensure this is set correctly
+        // UPLOAD_URL_PREFIX is now set globally from PHP via window.APP_SETTINGS.uploadUrl
+        // The line below is redundant and can be removed:
+        // UPLOAD_URL_PREFIX = settings.upload_url_prefix || 'uploads/';
 
         // Populate site settings
         populateSiteSettings(settings);

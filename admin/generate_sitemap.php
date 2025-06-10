@@ -5,8 +5,18 @@
  * تتيح للمدير توليد وتحديث ملف خريطة الموقع XML لتحسين SEO
  */
 
-require_once '../includes/init.php';
-require_once '../includes/functions/admin_auth.php';
+require_once __DIR__ . '/init.php'; // Loads admin-specific initialization
+// admin_auth.php contains functions like admin_login, admin_logout, is_admin_logged_in (specific version)
+// It's assumed that PROJECT_ROOT is defined via config.php loaded in admin/init.php
+// and that admin_auth.php's dependencies (like db_query) are met by what admin/init.php sets up,
+// OR that admin/init.php will be augmented to make these compatible.
+// For now, directly including it using PROJECT_ROOT.
+if (defined('PROJECT_ROOT')) {
+    require_once PROJECT_ROOT . '/includes/functions/admin_auth.php';
+} else {
+    // Fallback or error if PROJECT_ROOT is not defined, though it should be by admin/init.php
+    require_once dirname(__DIR__) . '/includes/functions/admin_auth.php';
+}
 
 // التحقق من تسجيل الدخول
 check_admin_login();
@@ -41,33 +51,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $priority_projects = (float)$_POST['priority_projects'];
             
             // تحديث الإعدادات في قاعدة البيانات
-            $stmt = $db->prepare("UPDATE site_settings SET 
-                sitemap_auto_generate = ?, 
-                sitemap_frequency = ?, 
-                sitemap_include_images = ?,
-                sitemap_priority_home = ?,
-                sitemap_priority_services = ?,
-                sitemap_priority_projects = ?
-            WHERE id = 1");
-            $stmt->execute([
-                $auto_generate, 
-                $frequency, 
-                $include_images,
-                $priority_home,
-                $priority_services,
-                $priority_projects
-            ]);
-            
-            // تسجيل النشاط
-            log_activity($_SESSION['admin_id'], 'update_sitemap_settings', 'site_settings', 1);
-            
-            $success_message = "تم تحديث إعدادات خريطة الموقع بنجاح";
+            $sql_update_settings = "UPDATE site_settings SET
+                                        sitemap_auto_generate = :sitemap_auto_generate,
+                                        sitemap_frequency = :sitemap_frequency,
+                                        sitemap_include_images = :sitemap_include_images,
+                                        sitemap_priority_home = :sitemap_priority_home,
+                                        sitemap_priority_services = :sitemap_priority_services,
+                                        sitemap_priority_projects = :sitemap_priority_projects
+                                    WHERE id = 1";
+            $params_update = [
+                ':sitemap_auto_generate' => $auto_generate,
+                ':sitemap_frequency' => $frequency,
+                ':sitemap_include_images' => $include_images,
+                ':sitemap_priority_home' => $priority_home,
+                ':sitemap_priority_services' => $priority_services,
+                ':sitemap_priority_projects' => $priority_projects
+            ];
+            if ($db->execute($sql_update_settings, $params_update)) {
+                // تسجيل النشاط
+                log_activity($_SESSION['admin_id'], 'update_sitemap_settings', 'site_settings', 1);
+                $success_message = "تم تحديث إعدادات خريطة الموقع بنجاح";
+            } else {
+                $error_message = "فشل تحديث إعدادات خريطة الموقع.";
+            }
             break;
     }
 }
 
 // الحصول على إعدادات خريطة الموقع
-$stmt = $db->query("SELECT 
+$settings_query_sql = "SELECT
     sitemap_auto_generate, 
     sitemap_frequency, 
     sitemap_include_images,
@@ -75,8 +87,8 @@ $stmt = $db->query("SELECT
     sitemap_priority_services,
     sitemap_priority_projects,
     sitemap_last_generated
-FROM site_settings WHERE id = 1");
-$settings = $stmt->fetch(PDO::FETCH_ASSOC);
+FROM site_settings WHERE id = 1";
+$settings = $db->queryOne($settings_query_sql);
 
 // التحقق من وجود ملف خريطة الموقع
 $sitemap_exists = file_exists($sitemap_path);
@@ -287,13 +299,13 @@ function generate_sitemap() {
     
     try {
         // الحصول على إعدادات خريطة الموقع
-        $stmt = $db->query("SELECT 
+        $settings_sitemap_sql = "SELECT
             sitemap_include_images,
             sitemap_priority_home,
             sitemap_priority_services,
             sitemap_priority_projects
-        FROM site_settings WHERE id = 1");
-        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        FROM site_settings WHERE id = 1";
+        $settings = $db->queryOne($settings_sitemap_sql);
         
         $include_images = $settings['sitemap_include_images'] ?? 0;
         $priority_home = $settings['sitemap_priority_home'] ?? 1.0;
@@ -319,93 +331,83 @@ function generate_sitemap() {
         $xml .= '  </url>' . "\n";
         
         // إضافة صفحات الخدمات
-        $stmt = $db->query("SELECT id, slug, updated_at FROM services WHERE is_active = 1");
-        $services = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        foreach ($services as $service) {
-            $xml .= '  <url>' . "\n";
-            $xml .= '    <loc>' . SITE_URL . '/service-details.php?slug=' . $service['slug'] . '</loc>' . "\n";
-            $xml .= '    <lastmod>' . date('Y-m-d', strtotime($service['updated_at'])) . '</lastmod>' . "\n";
-            $xml .= '    <changefreq>weekly</changefreq>' . "\n";
-            $xml .= '    <priority>' . $priority_services . '</priority>' . "\n";
-            
-            // إضافة الصور إذا كان مطلوباً
-            if ($include_images) {
-                // الصورة الرئيسية
-                $stmt = $db->prepare("SELECT image_path, alt_text FROM service_images WHERE service_id = ? AND is_main = 1");
-                $stmt->execute([$service['id']]);
-                $main_image = $stmt->fetch(PDO::FETCH_ASSOC);
+        $services = $db->query("SELECT id, slug, updated_at FROM services WHERE is_active = 1");
+        if ($services) {
+            foreach ($services as $service) {
+                $xml .= '  <url>' . "\n";
+                $xml .= '    <loc>' . SITE_URL . '/service-details.php?slug=' . $service['slug'] . '</loc>' . "\n";
+                $xml .= '    <lastmod>' . date('Y-m-d', strtotime($service['updated_at'])) . '</lastmod>' . "\n";
+                $xml .= '    <changefreq>weekly</changefreq>' . "\n";
+                $xml .= '    <priority>' . $priority_services . '</priority>' . "\n";
                 
-                if ($main_image) {
-                    $xml .= '    <image:image>' . "\n";
-                    $xml .= '      <image:loc>' . SITE_URL . '/' . $main_image['image_path'] . '</image:loc>' . "\n";
-                    if ($main_image['alt_text']) {
-                        $xml .= '      <image:title>' . htmlspecialchars($main_image['alt_text']) . '</image:title>' . "\n";
+                // إضافة الصور إذا كان مطلوباً
+                if ($include_images) {
+                    // الصورة الرئيسية
+                    $main_image = $db->queryOne("SELECT image_path, alt_text FROM service_images WHERE service_id = :service_id AND is_main = 1", [':service_id' => $service['id']]);
+                    if ($main_image) {
+                        $xml .= '    <image:image>' . "\n";
+                        $xml .= '      <image:loc>' . SITE_URL . '/' . $main_image['image_path'] . '</image:loc>' . "\n";
+                        if ($main_image['alt_text']) {
+                            $xml .= '      <image:title>' . htmlspecialchars($main_image['alt_text']) . '</image:title>' . "\n";
+                        }
+                        $xml .= '    </image:image>' . "\n";
                     }
-                    $xml .= '    </image:image>' . "\n";
-                }
-                
-                // الصور الإضافية
-                $stmt = $db->prepare("SELECT image_path, alt_text FROM service_images WHERE service_id = ? AND is_main = 0");
-                $stmt->execute([$service['id']]);
-                $images = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                
-                foreach ($images as $image) {
-                    $xml .= '    <image:image>' . "\n";
-                    $xml .= '      <image:loc>' . SITE_URL . '/' . $image['image_path'] . '</image:loc>' . "\n";
-                    if ($image['alt_text']) {
-                        $xml .= '      <image:title>' . htmlspecialchars($image['alt_text']) . '</image:title>' . "\n";
+
+                    // الصور الإضافية
+                    $images = $db->query("SELECT image_path, alt_text FROM service_images WHERE service_id = :service_id AND is_main = 0", [':service_id' => $service['id']]);
+                    if($images){
+                        foreach ($images as $image) {
+                            $xml .= '    <image:image>' . "\n";
+                            $xml .= '      <image:loc>' . SITE_URL . '/' . $image['image_path'] . '</image:loc>' . "\n";
+                            if ($image['alt_text']) {
+                                $xml .= '      <image:title>' . htmlspecialchars($image['alt_text']) . '</image:title>' . "\n";
+                            }
+                            $xml .= '    </image:image>' . "\n";
+                        }
                     }
-                    $xml .= '    </image:image>' . "\n";
                 }
+                $xml .= '  </url>' . "\n";
             }
-            
-            $xml .= '  </url>' . "\n";
         }
         
         // إضافة صفحات المشاريع
-        $stmt = $db->query("SELECT id, slug, updated_at FROM projects WHERE is_active = 1");
-        $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        foreach ($projects as $project) {
-            $xml .= '  <url>' . "\n";
-            $xml .= '    <loc>' . SITE_URL . '/project-details.php?slug=' . $project['slug'] . '</loc>' . "\n";
-            $xml .= '    <lastmod>' . date('Y-m-d', strtotime($project['updated_at'])) . '</lastmod>' . "\n";
-            $xml .= '    <changefreq>weekly</changefreq>' . "\n";
-            $xml .= '    <priority>' . $priority_projects . '</priority>' . "\n";
-            
-            // إضافة الصور إذا كان مطلوباً
-            if ($include_images) {
-                // الصورة الرئيسية
-                $stmt = $db->prepare("SELECT image_path, alt_text FROM project_images WHERE project_id = ? AND is_main = 1");
-                $stmt->execute([$project['id']]);
-                $main_image = $stmt->fetch(PDO::FETCH_ASSOC);
+        $projects = $db->query("SELECT id, slug, updated_at FROM projects WHERE is_active = 1");
+        if ($projects) {
+            foreach ($projects as $project) {
+                $xml .= '  <url>' . "\n";
+                $xml .= '    <loc>' . SITE_URL . '/project-details.php?slug=' . $project['slug'] . '</loc>' . "\n";
+                $xml .= '    <lastmod>' . date('Y-m-d', strtotime($project['updated_at'])) . '</lastmod>' . "\n";
+                $xml .= '    <changefreq>weekly</changefreq>' . "\n";
+                $xml .= '    <priority>' . $priority_projects . '</priority>' . "\n";
                 
-                if ($main_image) {
-                    $xml .= '    <image:image>' . "\n";
-                    $xml .= '      <image:loc>' . SITE_URL . '/' . $main_image['image_path'] . '</image:loc>' . "\n";
-                    if ($main_image['alt_text']) {
-                        $xml .= '      <image:title>' . htmlspecialchars($main_image['alt_text']) . '</image:title>' . "\n";
+                // إضافة الصور إذا كان مطلوباً
+                if ($include_images) {
+                    // الصورة الرئيسية
+                    $main_image = $db->queryOne("SELECT image_path, alt_text FROM project_images WHERE project_id = :project_id AND is_main = 1", [':project_id' => $project['id']]);
+                    if ($main_image) {
+                        $xml .= '    <image:image>' . "\n";
+                        $xml .= '      <image:loc>' . SITE_URL . '/' . $main_image['image_path'] . '</image:loc>' . "\n";
+                        if ($main_image['alt_text']) {
+                            $xml .= '      <image:title>' . htmlspecialchars($main_image['alt_text']) . '</image:title>' . "\n";
+                        }
+                        $xml .= '    </image:image>' . "\n";
                     }
-                    $xml .= '    </image:image>' . "\n";
-                }
-                
-                // الصور الإضافية
-                $stmt = $db->prepare("SELECT image_path, alt_text FROM project_images WHERE project_id = ? AND is_main = 0");
-                $stmt->execute([$project['id']]);
-                $images = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                
-                foreach ($images as $image) {
-                    $xml .= '    <image:image>' . "\n";
-                    $xml .= '      <image:loc>' . SITE_URL . '/' . $image['image_path'] . '</image:loc>' . "\n";
-                    if ($image['alt_text']) {
-                        $xml .= '      <image:title>' . htmlspecialchars($image['alt_text']) . '</image:title>' . "\n";
+
+                    // الصور الإضافية
+                    $images = $db->query("SELECT image_path, alt_text FROM project_images WHERE project_id = :project_id AND is_main = 0", [':project_id' => $project['id']]);
+                    if($images){
+                        foreach ($images as $image) {
+                            $xml .= '    <image:image>' . "\n";
+                            $xml .= '      <image:loc>' . SITE_URL . '/' . $image['image_path'] . '</image:loc>' . "\n";
+                            if ($image['alt_text']) {
+                                $xml .= '      <image:title>' . htmlspecialchars($image['alt_text']) . '</image:title>' . "\n";
+                            }
+                            $xml .= '    </image:image>' . "\n";
+                        }
                     }
-                    $xml .= '    </image:image>' . "\n";
                 }
+                $xml .= '  </url>' . "\n";
             }
-            
-            $xml .= '  </url>' . "\n";
         }
         
         // إضافة صفحات ثابتة أخرى
@@ -432,8 +434,7 @@ function generate_sitemap() {
         file_put_contents($sitemap_path, $xml);
         
         // تحديث تاريخ آخر توليد
-        $stmt = $db->prepare("UPDATE site_settings SET sitemap_last_generated = NOW() WHERE id = 1");
-        $stmt->execute();
+        $db->execute("UPDATE site_settings SET sitemap_last_generated = NOW() WHERE id = 1");
         
         return true;
     } catch (Exception $e) {

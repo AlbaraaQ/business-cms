@@ -36,14 +36,11 @@ function get_all_projects($active_only = false, $featured_only = false, $limit =
     $sql .= " ORDER BY created_at DESC";
     
     if ($limit > 0) {
-        $sql .= " LIMIT ?";
-        $params[] = $limit;
+        $sql .= " LIMIT :limit_val";
+        $params['limit_val'] = $limit;
     }
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $db->query($sql, $params);
 }
 
 /**
@@ -55,10 +52,7 @@ function get_all_projects($active_only = false, $featured_only = false, $limit =
 function get_project_by_id($project_id) {
     global $db;
     
-    $stmt = $db->prepare("SELECT * FROM projects WHERE project_id = ?");
-    $stmt->execute([$project_id]);
-    
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    return $db->queryOne("SELECT * FROM projects WHERE project_id = :project_id", [':project_id' => $project_id]);
 }
 
 /**
@@ -70,10 +64,7 @@ function get_project_by_id($project_id) {
 function get_project_by_slug($slug) {
     global $db;
     
-    $stmt = $db->prepare("SELECT * FROM projects WHERE slug = ?");
-    $stmt->execute([$slug]);
-    
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    return $db->queryOne("SELECT * FROM projects WHERE slug = :slug", [':slug' => $slug]);
 }
 
 /**
@@ -97,14 +88,11 @@ function get_projects_by_category($category, $active_only = true, $limit = 0) {
     $sql .= " ORDER BY created_at DESC";
     
     if ($limit > 0) {
-        $sql .= " LIMIT ?";
-        $params[] = $limit;
+        $sql .= " LIMIT :limit_val";
+        $params[] = $limit; // Assuming $db->query can handle mixed or understands positional for LIMIT
     }
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $db->query($sql, $params);
 }
 
 /**
@@ -128,10 +116,7 @@ function search_projects($keyword, $active_only = true) {
     
     $sql .= " ORDER BY created_at DESC";
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $db->query($sql, $params);
 }
 
 /**
@@ -145,12 +130,9 @@ function search_projects($keyword, $active_only = true) {
 function get_related_projects($project_id, $category, $limit = 3) {
     global $db;
     
-    $sql = "SELECT * FROM projects WHERE project_id != ? AND category = ? AND is_active = 1 ORDER BY RAND() LIMIT ?";
+    $sql = "SELECT * FROM projects WHERE project_id != :project_id AND category = :category AND is_active = 1 ORDER BY RAND() LIMIT :limit_val";
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute([$project_id, $category, $limit]);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $db->query($sql, [':project_id' => $project_id, ':category' => $category, ':limit_val' => $limit]);
 }
 
 /**
@@ -170,17 +152,15 @@ function get_project_categories($active_only = true) {
     
     $sql .= " ORDER BY category ASC";
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute();
-    
+    $results = $db->query($sql);
     $categories = [];
-    
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        if (!empty($row['category'])) {
-            $categories[] = $row['category'];
+    if ($results) {
+        foreach ($results as $row) {
+            if (!empty($row['category'])) {
+                $categories[] = $row['category'];
+            }
         }
     }
-    
     return $categories;
 }
 
@@ -218,7 +198,11 @@ function add_project($data) {
     }
     
     // إدراج المشروع في قاعدة البيانات
-    return db_insert('projects', $data);
+    $columns = implode(', ', array_keys($data));
+    $placeholders = ':' . implode(', :', array_keys($data));
+    $sql = "INSERT INTO projects ($columns) VALUES ($placeholders)";
+    $result = $db->execute($sql, $data);
+    return $result ? $db->lastInsertId() : false;
 }
 
 /**
@@ -248,7 +232,14 @@ function update_project($project_id, $data) {
     $data['updated_at'] = date('Y-m-d H:i:s');
     
     // تحديث المشروع في قاعدة البيانات
-    return db_update('projects', $data, 'project_id = ?', [$project_id]);
+    $set_clauses = [];
+    foreach (array_keys($data) as $key) {
+        $set_clauses[] = "$key = :$key";
+    }
+    $sql = "UPDATE projects SET " . implode(', ', $set_clauses) . " WHERE project_id = :project_id_condition";
+    $data_for_execute = $data;
+    $data_for_execute['project_id_condition'] = $project_id;
+    return $db->execute($sql, $data_for_execute);
 }
 
 /**
@@ -280,13 +271,13 @@ function delete_project($project_id) {
     }
     
     // حذف صور المشروع من قاعدة البيانات
-    db_delete('project_images', 'project_id = ?', [$project_id]);
+    $db->execute("DELETE FROM project_images WHERE project_id = ?", [$project_id]);
     
     // حذف إعدادات SEO
-    db_delete('seo_settings', 'entity_type = ? AND entity_id = ?', ['project', $project_id]);
+    $db->execute("DELETE FROM seo_settings WHERE entity_type = ? AND entity_id = ?", ['project', $project_id]);
     
     // حذف المشروع من قاعدة البيانات
-    return db_delete('projects', 'project_id = ?', [$project_id]);
+    return $db->execute("DELETE FROM projects WHERE project_id = ?", [$project_id]);
 }
 
 /**
@@ -307,7 +298,8 @@ function toggle_project_status($project_id, $is_active) {
     }
     
     // تحديث حالة المشروع
-    return db_update('projects', ['is_active' => $is_active ? 1 : 0], 'project_id = ?', [$project_id]);
+    $sql = "UPDATE projects SET is_active = :is_active WHERE project_id = :project_id";
+    return $db->execute($sql, [':is_active' => $is_active ? 1 : 0, ':project_id' => $project_id]);
 }
 
 /**
@@ -328,7 +320,8 @@ function toggle_project_featured($project_id, $is_featured) {
     }
     
     // تحديث حالة تمييز المشروع
-    return db_update('projects', ['is_featured' => $is_featured ? 1 : 0], 'project_id = ?', [$project_id]);
+    $sql = "UPDATE projects SET is_featured = :is_featured WHERE project_id = :project_id";
+    return $db->execute($sql, [':is_featured' => $is_featured ? 1 : 0, ':project_id' => $project_id]);
 }
 
 /**

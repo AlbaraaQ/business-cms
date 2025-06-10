@@ -28,8 +28,8 @@ function admin_login($username, $password) {
     $username = clean_input($username);
     
     // الحصول على بيانات المستخدم
-    $query = "SELECT * FROM admins WHERE username = ?";
-    $admin = db_fetch_row($query, [$username]);
+    $sql_select_admin = "SELECT * FROM admins WHERE username = :username";
+    $admin = $db->queryOne($sql_select_admin, [':username' => $username]);
     
     // التحقق من وجود المستخدم وصحة كلمة المرور
     if ($admin && verify_password($password, $admin['password'])) {
@@ -40,8 +40,8 @@ function admin_login($username, $password) {
         $_SESSION['admin_role'] = $admin['role'];
         
         // تحديث آخر تسجيل دخول
-        $query = "UPDATE admins SET last_login = NOW() WHERE admin_id = ?";
-        db_query($query, [$admin['admin_id']]);
+        $sql_update_login = "UPDATE admins SET last_login = NOW() WHERE admin_id = :admin_id";
+        $db->execute($sql_update_login, [':admin_id' => $admin['admin_id']]);
         
         // تسجيل نشاط تسجيل الدخول
         log_admin_activity($admin['admin_id'], 'تسجيل دخول');
@@ -107,8 +107,8 @@ function get_admin_permissions($admin_id) {
     global $db;
     
     // الحصول على دور المستخدم
-    $query = "SELECT role FROM admins WHERE admin_id = ?";
-    $admin = db_fetch_row($query, [$admin_id]);
+    $sql_select_role = "SELECT role FROM admins WHERE admin_id = :admin_id";
+    $admin = $db->queryOne($sql_select_role, [':admin_id' => $admin_id]);
     
     if (!$admin) {
         return [];
@@ -120,19 +120,20 @@ function get_admin_permissions($admin_id) {
     }
     
     // الحصول على صلاحيات الدور
-    $query = "SELECT p.permission_name
-              FROM admin_role_permissions rp
-              JOIN admin_permissions p ON rp.permission_id = p.permission_id
-              JOIN admin_roles r ON rp.role_id = r.role_id
-              WHERE r.role_name = ?";
+    $sql_select_permissions = "SELECT p.permission_name
+                               FROM admin_role_permissions rp
+                               JOIN admin_permissions p ON rp.permission_id = p.permission_id
+                               JOIN admin_roles r ON rp.role_id = r.role_id
+                               WHERE r.role_name = :role_name";
     
-    $result = db_query($query, [$admin['role']]);
+    $results = $db->query($sql_select_permissions, [':role_name' => $admin['role']]);
     
     $permissions = [];
-    while ($row = $result->fetch_assoc()) {
-        $permissions[] = $row['permission_name'];
+    if ($results) {
+        foreach ($results as $row) {
+            $permissions[] = $row['permission_name'];
+        }
     }
-    
     return $permissions;
 }
 
@@ -156,7 +157,10 @@ function log_admin_activity($admin_id, $activity, $details = '') {
         'created_at' => date('Y-m-d H:i:s')
     ];
     
-    return db_insert('admin_activity_log', $data) !== false;
+    $columns = implode(', ', array_keys($data));
+    $placeholders = ':' . implode(', :', array_keys($data));
+    $sql = "INSERT INTO admin_activity_log ($columns) VALUES ($placeholders)";
+    return $db->execute($sql, $data); // Returns true on success, false on failure
 }
 
 /**
@@ -171,8 +175,8 @@ function change_admin_password($admin_id, $current_password, $new_password) {
     global $db;
     
     // الحصول على بيانات المستخدم
-    $query = "SELECT password FROM admins WHERE admin_id = ?";
-    $admin = db_fetch_row($query, [$admin_id]);
+    $sql_select_pass = "SELECT password FROM admins WHERE admin_id = :admin_id";
+    $admin = $db->queryOne($sql_select_pass, [':admin_id' => $admin_id]);
     
     if (!$admin) {
         return false;
@@ -187,8 +191,8 @@ function change_admin_password($admin_id, $current_password, $new_password) {
     $hashed_password = hash_password($new_password);
     
     // تحديث كلمة المرور
-    $query = "UPDATE admins SET password = ? WHERE admin_id = ?";
-    $result = db_query($query, [$hashed_password, $admin_id]);
+    $sql_update_pass = "UPDATE admins SET password = :password WHERE admin_id = :admin_id";
+    $result = $db->execute($sql_update_pass, [':password' => $hashed_password, ':admin_id' => $admin_id]);
     
     if ($result) {
         // تسجيل نشاط تغيير كلمة المرور
@@ -209,8 +213,8 @@ function create_password_reset_token($email) {
     global $db;
     
     // التحقق من وجود المستخدم
-    $query = "SELECT admin_id FROM admins WHERE email = ?";
-    $admin = db_fetch_row($query, [$email]);
+    $sql_select_admin = "SELECT admin_id FROM admins WHERE email = :email";
+    $admin = $db->queryOne($sql_select_admin, [':email' => $email]);
     
     if (!$admin) {
         return false;
@@ -221,8 +225,8 @@ function create_password_reset_token($email) {
     $expires_at = date('Y-m-d H:i:s', time() + 3600); // صالح لمدة ساعة واحدة
     
     // حذف أي رموز سابقة
-    $query = "DELETE FROM admin_password_resets WHERE admin_id = ?";
-    db_query($query, [$admin['admin_id']]);
+    $sql_delete_old_tokens = "DELETE FROM admin_password_resets WHERE admin_id = :admin_id";
+    $db->execute($sql_delete_old_tokens, [':admin_id' => $admin['admin_id']]);
     
     // إدراج الرمز الجديد
     $data = [
@@ -232,9 +236,11 @@ function create_password_reset_token($email) {
         'created_at' => date('Y-m-d H:i:s')
     ];
     
-    $result = db_insert('admin_password_resets', $data);
+    $columns = implode(', ', array_keys($data));
+    $placeholders = ':' . implode(', :', array_keys($data));
+    $sql_insert_token = "INSERT INTO admin_password_resets ($columns) VALUES ($placeholders)";
     
-    if ($result) {
+    if ($db->execute($sql_insert_token, $data)) {
         return $token;
     }
     
@@ -251,8 +257,8 @@ function verify_password_reset_token($token) {
     global $db;
     
     // الحصول على بيانات الرمز
-    $query = "SELECT admin_id, expires_at FROM admin_password_resets WHERE token = ?";
-    $reset = db_fetch_row($query, [$token]);
+    $sql_select_token = "SELECT admin_id, expires_at FROM admin_password_resets WHERE token = :token";
+    $reset = $db->queryOne($sql_select_token, [':token' => $token]);
     
     if (!$reset) {
         return false;
@@ -287,13 +293,13 @@ function reset_admin_password($token, $new_password) {
     $hashed_password = hash_password($new_password);
     
     // تحديث كلمة المرور
-    $query = "UPDATE admins SET password = ? WHERE admin_id = ?";
-    $result = db_query($query, [$hashed_password, $admin_id]);
+    $sql_update_pass = "UPDATE admins SET password = :password WHERE admin_id = :admin_id";
+    $result = $db->execute($sql_update_pass, [':password' => $hashed_password, ':admin_id' => $admin_id]);
     
     if ($result) {
         // حذف الرمز
-        $query = "DELETE FROM admin_password_resets WHERE token = ?";
-        db_query($query, [$token]);
+        $sql_delete_token = "DELETE FROM admin_password_resets WHERE token = :token";
+        $db->execute($sql_delete_token, [':token' => $token]);
         
         // تسجيل نشاط إعادة تعيين كلمة المرور
         log_admin_activity($admin_id, 'إعادة تعيين كلمة المرور');

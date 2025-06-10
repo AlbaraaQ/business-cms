@@ -15,13 +15,11 @@ if (!isset($_SESSION['admin_id'])) {
 require_once 'includes/assets.php';
 
 // الحصول على معلومات المستخدم الحالي
-$stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->execute([$_SESSION['admin_id']]);
-$current_user = $stmt->fetch(PDO::FETCH_ASSOC);
+$current_user = $db->queryOne("SELECT * FROM users WHERE id = :id", [':id' => $_SESSION['admin_id']]);
 
 // الحصول على عدد الرسائل غير المقروءة
-$stmt = $db->query("SELECT COUNT(*) FROM messages WHERE is_read = 0");
-$unread_messages_count = $stmt->fetchColumn();
+$unread_count_result = $db->queryOne("SELECT COUNT(*) as count FROM messages WHERE is_read = 0");
+$unread_messages_count = $unread_count_result ? $unread_count_result['count'] : 0;
 
 // تحديد الصفحة الحالية
 $current_page = basename($_SERVER['PHP_SELF']);

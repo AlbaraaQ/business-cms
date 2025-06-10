@@ -267,4 +267,104 @@ function delete_uploaded_file($relative_path) {
     return true; // File doesn't exist, so it's "deleted"
 }
 
+/**
+ * تنسيق التاريخ
+ *
+ * @param string $date التاريخ المراد تنسيقه
+ * @param string $format صيغة التاريخ
+ * @return string التاريخ المنسق
+ */
+function format_date($date, $format = 'Y-m-d') {
+    if (empty($date)) {
+        return '';
+    }
+
+    $timestamp = strtotime($date);
+
+    if ($timestamp === false) {
+        return $date; // Return original if strtotime fails
+    }
+
+    return date($format, $timestamp);
+}
+
+/**
+ * عرض رسالة تنبيه
+ *
+ * @param string $message نص الرسالة
+ * @param string $type نوع الرسالة (success, info, warning, danger)
+ * @return string كود HTML للرسالة
+ */
+function show_alert($message, $type = 'info') {
+    return '<div class="alert alert-' . htmlspecialchars($type) . ' alert-dismissible fade show" role="alert">
+        ' . htmlspecialchars($message) . '
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>';
+}
+// Note: For the above show_alert, ensure Bootstrap 5 JS is loaded for dismissible alerts.
+// The original had data-dismiss="alert" and <span aria-hidden="true">&times;</span> which is BS4.
+// Updated to btn-close for BS5.
+
+/**
+ * تحميل التحميل الكسول للصور
+ *
+ * @param string $image_path مسار الصورة
+ * @param string $alt النص البديل للصورة
+ * @param string $class فئات CSS إضافية
+ * @return string كود HTML للصورة مع التحميل الكسول
+ */
+function lazy_load_image($image_path, $alt = '', $class = '') {
+    // Ensure SITE_URL or a similar base URL constant is available if $image_path is relative to site root
+    // Or UPLOAD_URL if it's specific to uploads
+    $full_image_path = $image_path; // Assuming $image_path is already a full URL or correct relative path from assets
+    if (defined('UPLOAD_URL') && strpos($image_path, UPLOAD_URL) === false && !preg_match('/^(http|https):\/\//', $image_path) && $image_path[0] !== '/') {
+        // Heuristic: if not a full URL, not starting with / and UPLOAD_URL is defined, prepend UPLOAD_URL
+        // This might need adjustment based on how $image_path is typically passed.
+        // For now, assume $image_path is relative to UPLOAD_URL or already a full path.
+        // $full_image_path = rtrim(UPLOAD_URL, '/') . '/' . ltrim($image_path, '/');
+    }
+
+    return '<img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 3 2\'%3E%3C/svg%3E" data-src="' . htmlspecialchars($full_image_path) . '" alt="' . htmlspecialchars($alt) . '" class="lazyload ' . htmlspecialchars($class) . '">';
+}
+
+
+/**
+ * إنشاء رابط صفحة
+ *
+ * @param string $page اسم الصفحة
+ * @param array $params معلمات إضافية
+ * @return string الرابط الكامل
+ */
+function create_page_link($page, $params = []) {
+    // SITE_URL should be defined (typically in config.php and loaded by init.php)
+    $base = defined('SITE_URL') ? SITE_URL : '';
+    $url = rtrim($base, '/') . '/' . ltrim($page, '/');
+
+    if (!empty($params)) {
+        $url .= '?' . http_build_query($params);
+    }
+
+    return $url;
+}
+
+/**
+ * إنشاء رابط خدمة
+ *
+ * @param string $slug المعرف المخصص للخدمة
+ * @return string رابط صفحة تفاصيل الخدمة
+ */
+function create_service_link($slug) {
+    return create_page_link('service-details.php', ['slug' => $slug]);
+}
+
+/**
+ * إنشاء رابط مشروع
+ *
+ * @param string $slug المعرف المخصص للمشروع
+ * @return string رابط صفحة تفاصيل المشروع
+ */
+function create_project_link($slug) {
+    return create_page_link('project-details.php', ['slug' => $slug]);
+}
+
 ?>
