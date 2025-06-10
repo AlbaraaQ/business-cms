@@ -1,0 +1,525 @@
+/* 
+ * ملف CSS للتأكد من استجابة الموقع لجميع أحجام الشاشات
+ * يحتوي على قواعد CSS للتصميم المتجاوب
+ */
+
+/* قواعد عامة */
+:root {
+  --primary-color: #007bff;
+  --secondary-color: #6c757d;
+  --success-color: #28a745;
+  --danger-color: #dc3545;
+  --warning-color: #ffc107;
+  --info-color: #17a2b8;
+  --light-color: #f8f9fa;
+  --dark-color: #343a40;
+  --body-bg: #f8f9fa;
+  --body-color: #212529;
+}
+
+body {
+  font-family: 'Cairo', sans-serif;
+  background-color: var(--body-bg);
+  color: var(--body-color);
+  line-height: 1.6;
+  direction: rtl;
+  text-align: right;
+}
+
+/* تصميم متجاوب للحاويات */
+.container {
+  width: 100%;
+  padding-right: 15px;
+  padding-left: 15px;
+  margin-right: auto;
+  margin-left: auto;
+}
+
+/* تصميم متجاوب للصور */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* تصميم متجاوب للجداول */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* تصميم متجاوب للنماذج */
+form {
+  width: 100%;
+}
+
+input, select, textarea {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+/* تصميم متجاوب للأزرار */
+.btn {
+  display: inline-block;
+  font-weight: 400;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: middle;
+  user-select: none;
+  border: 1px solid transparent;
+  padding: 0.375rem 0.75rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  border-radius: 0.25rem;
+  transition: all 0.15s ease-in-out;
+}
+
+.btn-primary {
+  color: #fff;
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.btn-secondary {
+  color: #fff;
+  background-color: var(--secondary-color);
+  border-color: var(--secondary-color);
+}
+
+.btn-success {
+  color: #fff;
+  background-color: var(--success-color);
+  border-color: var(--success-color);
+}
+
+.btn-danger {
+  color: #fff;
+  background-color: var(--danger-color);
+  border-color: var(--danger-color);
+}
+
+/* تصميم متجاوب للبطاقات */
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  word-wrap: break-word;
+  background-color: #fff;
+  background-clip: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.125);
+  border-radius: 0.25rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.card-body {
+  flex: 1 1 auto;
+  padding: 1.25rem;
+}
+
+.card-title {
+  margin-bottom: 0.75rem;
+}
+
+.card-text {
+  margin-bottom: 1rem;
+}
+
+.card-footer {
+  padding: 0.75rem 1.25rem;
+}
+
+/* تصميم متجاوب للقوائم */
+.navbar {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-brand {
+  display: inline-block;
+  padding-top: 0.3125rem;
+  padding-bottom: 0.3125rem;
+  margin-right: 1rem;
+  font-size: 1.25rem;
+  line-height: inherit;
+  white-space: nowrap;
+}
+
+.navbar-nav {
+  display: flex;
+  flex-direction: column;
+  padding-left: 0;
+  margin-bottom: 0;
+  list-style: none;
+}
+
+.nav-link {
+  display: block;
+  padding: 0.5rem 1rem;
+}
+
+/* تصميم متجاوب للصفحات الرئيسية */
+.hero-section {
+  padding: 4rem 0;
+  background-color: var(--light-color);
+  text-align: center;
+}
+
+.hero-section h1 {
+  font-size: 2.5rem;
+  margin-bottom: 1rem;
+}
+
+.hero-section p {
+  font-size: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+/* تصميم متجاوب لصفحات التفاصيل */
+.details-section {
+  padding: 3rem 0;
+}
+
+.details-section h1 {
+  margin-bottom: 1.5rem;
+}
+
+.details-section .content {
+  margin-bottom: 2rem;
+}
+
+/* تصميم متجاوب لمعارض الصور */
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  grid-gap: 15px;
+}
+
+.gallery-item {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.gallery-item img {
+  width: 100%;
+  height: auto;
+  transition: transform 0.3s ease;
+}
+
+.gallery-item:hover img {
+  transform: scale(1.05);
+}
+
+/* تصميم متجاوب للتذييل */
+.footer {
+  background-color: var(--dark-color);
+  color: #fff;
+  padding: 3rem 0;
+  margin-top: 3rem;
+}
+
+.footer h3 {
+  margin-bottom: 1.5rem;
+}
+
+.footer-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.footer-links li {
+  margin-bottom: 0.5rem;
+}
+
+.footer-links a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.footer-links a:hover {
+  text-decoration: underline;
+}
+
+/* تصميم متجاوب للوحة التحكم */
+.admin-sidebar {
+  background-color: var(--dark-color);
+  color: #fff;
+  min-height: 100vh;
+  padding: 1rem;
+}
+
+.admin-sidebar .nav-link {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.admin-sidebar .nav-link:hover,
+.admin-sidebar .nav-link.active {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.admin-content {
+  padding: 1.5rem;
+}
+
+/* تصميم متجاوب لمنطقة رفع الصور */
+.dropzone {
+  border: 2px dashed #ddd;
+  border-radius: 4px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.dropzone:hover {
+  border-color: var(--primary-color);
+}
+
+.dropzone-active {
+  border-color: var(--success-color);
+  background-color: rgba(40, 167, 69, 0.1);
+}
+
+/* تصميم متجاوب لمنطقة ترتيب الصور */
+.sortable-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-gap: 15px;
+}
+
+.sortable-item {
+  position: relative;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: move;
+}
+
+.sortable-item img {
+  width: 100%;
+  height: auto;
+}
+
+.sortable-item .actions {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+}
+
+.sortable-item .btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  margin-left: 5px;
+}
+
+/* تصميم متجاوب لمحرر النصوص المنسقة */
+.rich-text-editor {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  min-height: 200px;
+}
+
+/* تصميم متجاوب لإعدادات SEO */
+.seo-settings {
+  background-color: #f8f9fa;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 1.5rem;
+  margin-top: 2rem;
+}
+
+.seo-settings h3 {
+  margin-bottom: 1rem;
+}
+
+/* تصميم متجاوب للتنبيهات */
+.alert {
+  position: relative;
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+}
+
+.alert-success {
+  color: #155724;
+  background-color: #d4edda;
+  border-color: #c3e6cb;
+}
+
+.alert-danger {
+  color: #721c24;
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
+}
+
+.alert-warning {
+  color: #856404;
+  background-color: #fff3cd;
+  border-color: #ffeeba;
+}
+
+.alert-info {
+  color: #0c5460;
+  background-color: #d1ecf1;
+  border-color: #bee5eb;
+}
+
+/* تصميم متجاوب للشاشات الصغيرة (الهواتف) */
+@media (max-width: 576px) {
+  .hero-section h1 {
+    font-size: 2rem;
+  }
+  
+  .hero-section p {
+    font-size: 1rem;
+  }
+  
+  .gallery {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+  
+  .sortable-container {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+  
+  .card-title {
+    font-size: 1.25rem;
+  }
+  
+  .navbar-brand {
+    font-size: 1.1rem;
+  }
+  
+  .admin-sidebar {
+    min-height: auto;
+  }
+}
+
+/* تصميم متجاوب للشاشات المتوسطة (التابلت) */
+@media (min-width: 577px) and (max-width: 991px) {
+  .container {
+    max-width: 720px;
+  }
+  
+  .navbar-nav {
+    flex-direction: row;
+  }
+  
+  .navbar-nav .nav-link {
+    padding-right: 0.5rem;
+    padding-left: 0.5rem;
+  }
+  
+  .gallery {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+}
+
+/* تصميم متجاوب للشاشات الكبيرة (سطح المكتب) */
+@media (min-width: 992px) {
+  .container {
+    max-width: 960px;
+  }
+  
+  .navbar-expand-lg .navbar-nav {
+    flex-direction: row;
+  }
+  
+  .navbar-expand-lg .navbar-nav .nav-link {
+    padding-right: 0.5rem;
+    padding-left: 0.5rem;
+  }
+  
+  .gallery {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  }
+  
+  .admin-content {
+    padding: 2rem;
+  }
+}
+
+/* تصميم متجاوب للشاشات الكبيرة جداً */
+@media (min-width: 1200px) {
+  .container {
+    max-width: 1140px;
+  }
+}
+
+/* تحسينات إضافية للتصميم المتجاوب */
+.d-none {
+  display: none !important;
+}
+
+.d-block {
+  display: block !important;
+}
+
+@media (min-width: 576px) {
+  .d-sm-none {
+    display: none !important;
+  }
+  
+  .d-sm-block {
+    display: block !important;
+  }
+}
+
+@media (min-width: 768px) {
+  .d-md-none {
+    display: none !important;
+  }
+  
+  .d-md-block {
+    display: block !important;
+  }
+}
+
+@media (min-width: 992px) {
+  .d-lg-none {
+    display: none !important;
+  }
+  
+  .d-lg-block {
+    display: block !important;
+  }
+}
+
+@media (min-width: 1200px) {
+  .d-xl-none {
+    display: none !important;
+  }
+  
+  .d-xl-block {
+    display: block !important;
+  }
+}
+
+/* تحسينات للتحميل الكسول للصور */
+.lazyload {
+  opacity: 0;
+  transition: opacity 0.3s ease-in-out;
+}
+
+.lazyloaded {
+  opacity: 1;
+}
