@@ -113,6 +113,10 @@ $social_links = get_social_links();
     <script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@5.0.19/dist/fancybox/fancybox.umd.js"></script>
     
     <!-- JavaScript المخصص -->
+    <script>
+        window.APP_SETTINGS = window.APP_SETTINGS || {};
+        window.APP_SETTINGS.uploadUrl = '<?php echo defined("UPLOAD_URL") ? rtrim(UPLOAD_URL, "/") . "/" : "/uploads/"; ?>';
+    </script>
     <script src="assets/js/main.js"></script>
     
     <script>

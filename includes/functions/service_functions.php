@@ -36,14 +36,11 @@ function get_all_services($active_only = false, $featured_only = false, $limit =
     $sql .= " ORDER BY created_at DESC";
     
     if ($limit > 0) {
-        $sql .= " LIMIT ?";
-        $params[] = $limit;
+        $sql .= " LIMIT :limit_val";
+        $params['limit_val'] = $limit;
     }
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $db->query($sql, $params);
 }
 
 /**
@@ -55,10 +52,7 @@ function get_all_services($active_only = false, $featured_only = false, $limit =
 function get_service_by_id($service_id) {
     global $db;
     
-    $stmt = $db->prepare("SELECT * FROM services WHERE service_id = ?");
-    $stmt->execute([$service_id]);
-    
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    return $db->queryOne("SELECT * FROM services WHERE service_id = :service_id", [':service_id' => $service_id]);
 }
 
 /**
@@ -70,10 +64,7 @@ function get_service_by_id($service_id) {
 function get_service_by_slug($slug) {
     global $db;
     
-    $stmt = $db->prepare("SELECT * FROM services WHERE slug = ?");
-    $stmt->execute([$slug]);
-    
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    return $db->queryOne("SELECT * FROM services WHERE slug = :slug", [':slug' => $slug]);
 }
 
 /**
@@ -97,14 +88,15 @@ function get_services_by_category($category, $active_only = true, $limit = 0) {
     $sql .= " ORDER BY created_at DESC";
     
     if ($limit > 0) {
-        $sql .= " LIMIT ?";
+        $sql .= " LIMIT :limit_val";
+        // Parameters are already positional, so we need to ensure correct order if mixing named and positional
+        // For simplicity with $db->query, ensure all params are consistently positional or named
+        // Here, we'll stick to positional for this query as it was originally.
+        // $params['limit_val'] = $limit; // This would be for named
         $params[] = $limit;
     }
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $db->query($sql, $params);
 }
 
 /**
@@ -128,10 +120,7 @@ function search_services($keyword, $active_only = true) {
     
     $sql .= " ORDER BY created_at DESC";
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $db->query($sql, $params);
 }
 
 /**
@@ -145,12 +134,9 @@ function search_services($keyword, $active_only = true) {
 function get_related_services($service_id, $category, $limit = 3) {
     global $db;
     
-    $sql = "SELECT * FROM services WHERE service_id != ? AND category = ? AND is_active = 1 ORDER BY RAND() LIMIT ?";
+    $sql = "SELECT * FROM services WHERE service_id != :service_id AND category = :category AND is_active = 1 ORDER BY RAND() LIMIT :limit_val";
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute([$service_id, $category, $limit]);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    return $db->query($sql, [':service_id' => $service_id, ':category' => $category, ':limit_val' => $limit]);
 }
 
 /**
@@ -170,17 +156,15 @@ function get_service_categories($active_only = true) {
     
     $sql .= " ORDER BY category ASC";
     
-    $stmt = $db->prepare($sql);
-    $stmt->execute();
-    
+    $results = $db->query($sql);
     $categories = [];
-    
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        if (!empty($row['category'])) {
-            $categories[] = $row['category'];
+    if ($results) {
+        foreach ($results as $row) {
+            if (!empty($row['category'])) {
+                $categories[] = $row['category'];
+            }
         }
     }
-    
     return $categories;
 }
 
@@ -218,7 +202,11 @@ function add_service($data) {
     }
     
     // إدراج الخدمة في قاعدة البيانات
-    return db_insert('services', $data);
+    $columns = implode(', ', array_keys($data));
+    $placeholders = ':' . implode(', :', array_keys($data));
+    $sql = "INSERT INTO services ($columns) VALUES ($placeholders)";
+    $result = $db->execute($sql, $data);
+    return $result ? $db->lastInsertId() : false;
 }
 
 /**
@@ -248,7 +236,14 @@ function update_service($service_id, $data) {
     $data['updated_at'] = date('Y-m-d H:i:s');
     
     // تحديث الخدمة في قاعدة البيانات
-    return db_update('services', $data, 'service_id = ?', [$service_id]);
+    $set_clauses = [];
+    foreach (array_keys($data) as $key) {
+        $set_clauses[] = "$key = :$key";
+    }
+    $sql = "UPDATE services SET " . implode(', ', $set_clauses) . " WHERE service_id = :service_id_condition";
+    $data_for_execute = $data; // Use a copy for execute
+    $data_for_execute['service_id_condition'] = $service_id;
+    return $db->execute($sql, $data_for_execute);
 }
 
 /**
@@ -280,13 +275,13 @@ function delete_service($service_id) {
     }
     
     // حذف صور الخدمة من قاعدة البيانات
-    db_delete('service_images', 'service_id = ?', [$service_id]);
+    $db->execute("DELETE FROM service_images WHERE service_id = ?", [$service_id]);
     
     // حذف إعدادات SEO
-    db_delete('seo_settings', 'entity_type = ? AND entity_id = ?', ['service', $service_id]);
+    $db->execute("DELETE FROM seo_settings WHERE entity_type = ? AND entity_id = ?", ['service', $service_id]);
     
     // حذف الخدمة من قاعدة البيانات
-    return db_delete('services', 'service_id = ?', [$service_id]);
+    return $db->execute("DELETE FROM services WHERE service_id = ?", [$service_id]);
 }
 
 /**
@@ -307,7 +302,8 @@ function toggle_service_status($service_id, $is_active) {
     }
     
     // تحديث حالة الخدمة
-    return db_update('services', ['is_active' => $is_active ? 1 : 0], 'service_id = ?', [$service_id]);
+    $sql = "UPDATE services SET is_active = :is_active WHERE service_id = :service_id";
+    return $db->execute($sql, [':is_active' => $is_active ? 1 : 0, ':service_id' => $service_id]);
 }
 
 /**
@@ -328,7 +324,8 @@ function toggle_service_featured($service_id, $is_featured) {
     }
     
     // تحديث حالة تمييز الخدمة
-    return db_update('services', ['is_featured' => $is_featured ? 1 : 0], 'service_id = ?', [$service_id]);
+    $sql = "UPDATE services SET is_featured = :is_featured WHERE service_id = :service_id";
+    return $db->execute($sql, [':is_featured' => $is_featured ? 1 : 0, ':service_id' => $service_id]);
 }
 
 /**

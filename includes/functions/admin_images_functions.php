@@ -192,15 +192,8 @@ function optimize_image($image_path) {
 function get_service_images($service_id) {
     global $db;
     
-    $stmt = $db->prepare("
-        SELECT * FROM service_images 
-        WHERE service_id = ? 
-        ORDER BY sort_order ASC
-    ");
-    
-    $stmt->execute([$service_id]);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $sql = "SELECT * FROM service_images WHERE service_id = :service_id ORDER BY sort_order ASC";
+    return $db->query($sql, [':service_id' => $service_id]);
 }
 
 /**
@@ -212,15 +205,8 @@ function get_service_images($service_id) {
 function get_project_images($project_id) {
     global $db;
     
-    $stmt = $db->prepare("
-        SELECT * FROM project_images 
-        WHERE project_id = ? 
-        ORDER BY sort_order ASC
-    ");
-    
-    $stmt->execute([$project_id]);
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $sql = "SELECT * FROM project_images WHERE project_id = :project_id ORDER BY sort_order ASC";
+    return $db->query($sql, [':project_id' => $project_id]);
 }
 
 /**
@@ -236,36 +222,24 @@ function add_service_image($service_id, $image_path, $sort_order = null) {
     
     // الحصول على أعلى ترتيب إذا لم يتم توفيره
     if ($sort_order === null) {
-        $stmt = $db->prepare("
-            SELECT MAX(sort_order) as max_order 
-            FROM service_images 
-            WHERE service_id = ?
-        ");
-        
-        $stmt->execute([$service_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        $sort_order = $result['max_order'] ? $result['max_order'] + 1 : 1;
+        $sql_max_order = "SELECT MAX(sort_order) as max_order FROM service_images WHERE service_id = :service_id";
+        $result_row = $db->queryOne($sql_max_order, [':service_id' => $service_id]);
+        $sort_order = $result_row && $result_row['max_order'] ? $result_row['max_order'] + 1 : 1;
     }
     
     // إدراج الصورة
-    $stmt = $db->prepare("
-        INSERT INTO service_images (service_id, image_path, sort_order, created_at) 
-        VALUES (?, ?, ?, ?)
-    ");
-    
-    $result = $stmt->execute([
-        $service_id,
-        $image_path,
-        $sort_order,
-        date('Y-m-d H:i:s')
-    ]);
-    
-    if ($result) {
-        return $db->lastInsertId();
-    }
-    
-    return false;
+    $sql_insert = "INSERT INTO service_images (service_id, image_path, sort_order, created_at)
+                   VALUES (:service_id, :image_path, :sort_order, :created_at)";
+    $params = [
+        ':service_id' => $service_id,
+        ':image_path' => $image_path,
+        ':sort_order' => $sort_order,
+        ':created_at' => date('Y-m-d H:i:s')
+    ];
+
+    $result = $db->execute($sql_insert, $params);
+
+    return $result ? $db->lastInsertId() : false;
 }
 
 /**
@@ -281,36 +255,24 @@ function add_project_image($project_id, $image_path, $sort_order = null) {
     
     // الحصول على أعلى ترتيب إذا لم يتم توفيره
     if ($sort_order === null) {
-        $stmt = $db->prepare("
-            SELECT MAX(sort_order) as max_order 
-            FROM project_images 
-            WHERE project_id = ?
-        ");
-        
-        $stmt->execute([$project_id]);
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        $sort_order = $result['max_order'] ? $result['max_order'] + 1 : 1;
+        $sql_max_order = "SELECT MAX(sort_order) as max_order FROM project_images WHERE project_id = :project_id";
+        $result_row = $db->queryOne($sql_max_order, [':project_id' => $project_id]);
+        $sort_order = $result_row && $result_row['max_order'] ? $result_row['max_order'] + 1 : 1;
     }
     
     // إدراج الصورة
-    $stmt = $db->prepare("
-        INSERT INTO project_images (project_id, image_path, sort_order, created_at) 
-        VALUES (?, ?, ?, ?)
-    ");
-    
-    $result = $stmt->execute([
-        $project_id,
-        $image_path,
-        $sort_order,
-        date('Y-m-d H:i:s')
-    ]);
-    
-    if ($result) {
-        return $db->lastInsertId();
-    }
-    
-    return false;
+    $sql_insert = "INSERT INTO project_images (project_id, image_path, sort_order, created_at)
+                   VALUES (:project_id, :image_path, :sort_order, :created_at)";
+    $params = [
+        ':project_id' => $project_id,
+        ':image_path' => $image_path,
+        ':sort_order' => $sort_order,
+        ':created_at' => date('Y-m-d H:i:s')
+    ];
+
+    $result = $db->execute($sql_insert, $params);
+
+    return $result ? $db->lastInsertId() : false;
 }
 
 /**
@@ -323,31 +285,21 @@ function delete_service_image($image_id) {
     global $db;
     
     // الحصول على مسار الصورة
-    $stmt = $db->prepare("
-        SELECT image_path 
-        FROM service_images 
-        WHERE image_id = ?
-    ");
-    
-    $stmt->execute([$image_id]);
-    $image = $stmt->fetch(PDO::FETCH_ASSOC);
+    $sql_select = "SELECT image_path FROM service_images WHERE image_id = :image_id";
+    $image = $db->queryOne($sql_select, [':image_id' => $image_id]);
     
     if (!$image) {
         return false;
     }
     
     // حذف الصورة من الملفات
-    $image_deleted = delete_image($image['image_path']);
+    $image_file_deleted = delete_image($image['image_path']); // delete_image is a file system function
     
     // حذف الصورة من قاعدة البيانات
-    $stmt = $db->prepare("
-        DELETE FROM service_images 
-        WHERE image_id = ?
-    ");
+    $sql_delete = "DELETE FROM service_images WHERE image_id = :image_id";
+    $db_delete_result = $db->execute($sql_delete, [':image_id' => $image_id]);
     
-    $result = $stmt->execute([$image_id]);
-    
-    return $result && $image_deleted;
+    return $db_delete_result && $image_file_deleted;
 }
 
 /**
@@ -360,31 +312,21 @@ function delete_project_image($image_id) {
     global $db;
     
     // الحصول على مسار الصورة
-    $stmt = $db->prepare("
-        SELECT image_path 
-        FROM project_images 
-        WHERE image_id = ?
-    ");
-    
-    $stmt->execute([$image_id]);
-    $image = $stmt->fetch(PDO::FETCH_ASSOC);
+    $sql_select = "SELECT image_path FROM project_images WHERE image_id = :image_id";
+    $image = $db->queryOne($sql_select, [':image_id' => $image_id]);
     
     if (!$image) {
         return false;
     }
     
     // حذف الصورة من الملفات
-    $image_deleted = delete_image($image['image_path']);
+    $image_file_deleted = delete_image($image['image_path']); // delete_image is a file system function
     
     // حذف الصورة من قاعدة البيانات
-    $stmt = $db->prepare("
-        DELETE FROM project_images 
-        WHERE image_id = ?
-    ");
+    $sql_delete = "DELETE FROM project_images WHERE image_id = :image_id";
+    $db_delete_result = $db->execute($sql_delete, [':image_id' => $image_id]);
     
-    $result = $stmt->execute([$image_id]);
-    
-    return $result && $image_deleted;
+    return $db_delete_result && $image_file_deleted;
 }
 
 /**
@@ -396,19 +338,15 @@ function delete_project_image($image_id) {
 function update_service_images_order($image_order) {
     global $db;
     
-    $db->beginTransaction();
+    // Assuming $db object has transaction methods or provides access to PDO for them
+    $pdo = $db->getPdo(); // Example: Get PDO instance from Database class
+    $pdo->beginTransaction();
     $success = true;
     
     try {
+        $sql = "UPDATE service_images SET sort_order = :sort_order WHERE image_id = :image_id";
         foreach ($image_order as $index => $image_id) {
-            $stmt = $db->prepare("
-                UPDATE service_images 
-                SET sort_order = ? 
-                WHERE image_id = ?
-            ");
-            
-            $result = $stmt->execute([$index + 1, $image_id]);
-            
+            $result = $db->execute($sql, [':sort_order' => $index + 1, ':image_id' => $image_id]);
             if (!$result) {
                 $success = false;
                 break;
@@ -416,13 +354,14 @@ function update_service_images_order($image_order) {
         }
         
         if ($success) {
-            $db->commit();
+            $pdo->commit();
         } else {
-            $db->rollBack();
+            $pdo->rollBack();
         }
     } catch (Exception $e) {
-        $db->rollBack();
+        $pdo->rollBack();
         $success = false;
+        // Log error $e->getMessage()
     }
     
     return $success;
@@ -437,19 +376,15 @@ function update_service_images_order($image_order) {
 function update_project_images_order($image_order) {
     global $db;
     
-    $db->beginTransaction();
+    // Assuming $db object has transaction methods or provides access to PDO for them
+    $pdo = $db->getPdo(); // Example: Get PDO instance from Database class
+    $pdo->beginTransaction();
     $success = true;
     
     try {
+        $sql = "UPDATE project_images SET sort_order = :sort_order WHERE image_id = :image_id";
         foreach ($image_order as $index => $image_id) {
-            $stmt = $db->prepare("
-                UPDATE project_images 
-                SET sort_order = ? 
-                WHERE image_id = ?
-            ");
-            
-            $result = $stmt->execute([$index + 1, $image_id]);
-            
+            $result = $db->execute($sql, [':sort_order' => $index + 1, ':image_id' => $image_id]);
             if (!$result) {
                 $success = false;
                 break;
@@ -457,13 +392,14 @@ function update_project_images_order($image_order) {
         }
         
         if ($success) {
-            $db->commit();
+            $pdo->commit();
         } else {
-            $db->rollBack();
+            $pdo->rollBack();
         }
     } catch (Exception $e) {
-        $db->rollBack();
+        $pdo->rollBack();
         $success = false;
+        // Log error $e->getMessage()
     }
     
     return $success;
@@ -480,29 +416,16 @@ function set_service_main_image($service_id, $image_id) {
     global $db;
     
     // الحصول على مسار الصورة
-    $stmt = $db->prepare("
-        SELECT image_path 
-        FROM service_images 
-        WHERE image_id = ? AND service_id = ?
-    ");
-    
-    $stmt->execute([$image_id, $service_id]);
-    $image = $stmt->fetch(PDO::FETCH_ASSOC);
+    $sql_select = "SELECT image_path FROM service_images WHERE image_id = :image_id AND service_id = :service_id";
+    $image = $db->queryOne($sql_select, [':image_id' => $image_id, ':service_id' => $service_id]);
     
     if (!$image) {
         return false;
     }
     
     // تحديث الصورة الرئيسية للخدمة
-    $stmt = $db->prepare("
-        UPDATE services 
-        SET image = ? 
-        WHERE service_id = ?
-    ");
-    
-    $result = $stmt->execute([$image['image_path'], $service_id]);
-    
-    return $result;
+    $sql_update = "UPDATE services SET image = :image_path WHERE service_id = :service_id";
+    return $db->execute($sql_update, [':image_path' => $image['image_path'], ':service_id' => $service_id]);
 }
 
 /**
@@ -516,27 +439,14 @@ function set_project_main_image($project_id, $image_id) {
     global $db;
     
     // الحصول على مسار الصورة
-    $stmt = $db->prepare("
-        SELECT image_path 
-        FROM project_images 
-        WHERE image_id = ? AND project_id = ?
-    ");
-    
-    $stmt->execute([$image_id, $project_id]);
-    $image = $stmt->fetch(PDO::FETCH_ASSOC);
+    $sql_select = "SELECT image_path FROM project_images WHERE image_id = :image_id AND project_id = :project_id";
+    $image = $db->queryOne($sql_select, [':image_id' => $image_id, ':project_id' => $project_id]);
     
     if (!$image) {
         return false;
     }
     
     // تحديث الصورة الرئيسية للمشروع
-    $stmt = $db->prepare("
-        UPDATE projects 
-        SET main_image = ? 
-        WHERE project_id = ?
-    ");
-    
-    $result = $stmt->execute([$image['image_path'], $project_id]);
-    
-    return $result;
+    $sql_update = "UPDATE projects SET main_image = :main_image WHERE project_id = :project_id";
+    return $db->execute($sql_update, [':main_image' => $image['image_path'], ':project_id' => $project_id]);
 }

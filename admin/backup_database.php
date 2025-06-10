@@ -5,8 +5,18 @@
  * تتيح للمدير إنشاء وإدارة النسخ الاحتياطية لقاعدة البيانات
  */
 
-require_once '../includes/init.php';
-require_once '../includes/functions/admin_auth.php';
+require_once __DIR__ . '/init.php'; // Loads admin-specific initialization
+// admin_auth.php contains functions like admin_login, admin_logout, is_admin_logged_in (specific version)
+// It's assumed that PROJECT_ROOT is defined via config.php loaded in admin/init.php
+// and that admin_auth.php's dependencies (like db_query) are met by what admin/init.php sets up,
+// OR that admin/init.php will be augmented to make these compatible.
+// For now, directly including it using PROJECT_ROOT.
+if (defined('PROJECT_ROOT')) {
+    require_once PROJECT_ROOT . '/includes/functions/admin_auth.php';
+} else {
+    // Fallback or error if PROJECT_ROOT is not defined, though it should be by admin/init.php
+    require_once dirname(__DIR__) . '/includes/functions/admin_auth.php';
+}
 
 // التحقق من تسجيل الدخول وصلاحيات المدير
 check_admin_login();
@@ -36,13 +46,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($result) {
                 // تسجيل النسخة الاحتياطية في قاعدة البيانات
                 $file_size = filesize($backup_file);
-                $stmt = $db->prepare("INSERT INTO backups (filename, file_path, file_size, backup_type, created_by) VALUES (?, ?, ?, 'manual', ?)");
-                $stmt->execute([basename($backup_file), $backup_file, $file_size, $_SESSION['admin_id']]);
-                
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'create_backup', 'backups', $db->lastInsertId());
-                
-                $success_message = "تم إنشاء النسخة الاحتياطية بنجاح";
+                $sql_insert_backup = "INSERT INTO backups (filename, file_path, file_size, backup_type, created_by)
+                                      VALUES (:filename, :file_path, :file_size, 'manual', :created_by)";
+                $params_insert = [
+                    ':filename' => basename($backup_file),
+                    ':file_path' => $backup_file,
+                    ':file_size' => $file_size,
+                    ':created_by' => $_SESSION['admin_id']
+                ];
+                if ($db->execute($sql_insert_backup, $params_insert)) {
+                    // تسجيل النشاط
+                    log_activity($_SESSION['admin_id'], 'create_backup', 'backups', $db->lastInsertId());
+                    $success_message = "تم إنشاء النسخة الاحتياطية بنجاح";
+                } else {
+                    $error_message = "فشل تسجيل النسخة الاحتياطية في قاعدة البيانات";
+                }
             } else {
                 $error_message = "حدث خطأ أثناء إنشاء النسخة الاحتياطية";
             }
@@ -52,22 +70,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $backup_id = (int)$_POST['backup_id'];
             
             // الحصول على بيانات النسخة الاحتياطية
-            $stmt = $db->prepare("SELECT * FROM backups WHERE id = ?");
-            $stmt->execute([$backup_id]);
-            $backup = $stmt->fetch(PDO::FETCH_ASSOC);
+            $backup = $db->queryOne("SELECT * FROM backups WHERE id = :id", [':id' => $backup_id]);
             
             if ($backup && file_exists($backup['file_path'])) {
                 // حذف الملف
                 unlink($backup['file_path']);
                 
                 // حذف السجل من قاعدة البيانات
-                $stmt = $db->prepare("DELETE FROM backups WHERE id = ?");
-                $stmt->execute([$backup_id]);
-                
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'delete_backup', 'backups', $backup_id, $backup);
-                
-                $success_message = "تم حذف النسخة الاحتياطية بنجاح";
+                $sql_delete_backup = "DELETE FROM backups WHERE id = :id";
+                if($db->execute($sql_delete_backup, [':id' => $backup_id])) {
+                    // تسجيل النشاط
+                    log_activity($_SESSION['admin_id'], 'delete_backup', 'backups', $backup_id, $backup);
+                    $success_message = "تم حذف النسخة الاحتياطية بنجاح";
+                } else {
+                    $error_message = "فشل حذف النسخة الاحتياطية من قاعدة البيانات";
+                }
             } else {
                 $error_message = "النسخة الاحتياطية غير موجودة";
             }
@@ -77,9 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $backup_id = (int)$_POST['backup_id'];
             
             // الحصول على بيانات النسخة الاحتياطية
-            $stmt = $db->prepare("SELECT * FROM backups WHERE id = ?");
-            $stmt->execute([$backup_id]);
-            $backup = $stmt->fetch(PDO::FETCH_ASSOC);
+            $backup = $db->queryOne("SELECT * FROM backups WHERE id = :id", [':id' => $backup_id]);
             
             if ($backup && file_exists($backup['file_path'])) {
                 // إنشاء نسخة احتياطية قبل الاستعادة
@@ -107,9 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $backup_id = (int)$_POST['backup_id'];
             
             // الحصول على بيانات النسخة الاحتياطية
-            $stmt = $db->prepare("SELECT * FROM backups WHERE id = ?");
-            $stmt->execute([$backup_id]);
-            $backup = $stmt->fetch(PDO::FETCH_ASSOC);
+            $backup = $db->queryOne("SELECT * FROM backups WHERE id = :id", [':id' => $backup_id]);
             
             if ($backup && file_exists($backup['file_path'])) {
                 // تسجيل النشاط
@@ -136,31 +149,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $keep_days = (int)$_POST['keep_days'];
             
             // تحديث الإعدادات في قاعدة البيانات
-            $stmt = $db->prepare("UPDATE site_settings SET 
-                auto_backup = ?, 
-                backup_frequency = ?, 
-                backup_keep_days = ?
-            WHERE id = 1");
-            $stmt->execute([$auto_backup, $backup_frequency, $keep_days]);
-            
-            // تسجيل النشاط
-            log_activity($_SESSION['admin_id'], 'update_backup_settings', 'site_settings', 1);
-            
-            $success_message = "تم تحديث إعدادات النسخ الاحتياطي بنجاح";
+            $sql_update_settings = "UPDATE site_settings SET
+                                        auto_backup = :auto_backup,
+                                        backup_frequency = :backup_frequency,
+                                        backup_keep_days = :backup_keep_days
+                                    WHERE id = 1";
+            $params_update_settings = [
+                ':auto_backup' => $auto_backup,
+                ':backup_frequency' => $backup_frequency,
+                ':backup_keep_days' => $keep_days
+            ];
+            if($db->execute($sql_update_settings, $params_update_settings)) {
+                // تسجيل النشاط
+                log_activity($_SESSION['admin_id'], 'update_backup_settings', 'site_settings', 1);
+                $success_message = "تم تحديث إعدادات النسخ الاحتياطي بنجاح";
+            } else {
+                $error_message = "فشل تحديث إعدادات النسخ الاحتياطي";
+            }
             break;
     }
 }
 
 // الحصول على النسخ الاحتياطية
-$stmt = $db->query("SELECT b.*, u.full_name as created_by_name 
-                    FROM backups b 
-                    LEFT JOIN users u ON b.created_by = u.id 
-                    ORDER BY b.created_at DESC");
-$backups = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$sql_fetch_backups = "SELECT b.*, u.full_name as created_by_name
+                      FROM backups b
+                      LEFT JOIN users u ON b.created_by = u.id
+                      ORDER BY b.created_at DESC";
+$backups = $db->query($sql_fetch_backups);
 
 // الحصول على إعدادات النسخ الاحتياطي
-$stmt = $db->query("SELECT auto_backup, backup_frequency, backup_keep_days FROM site_settings WHERE id = 1");
-$settings = $stmt->fetch(PDO::FETCH_ASSOC);
+$settings = $db->queryOne("SELECT auto_backup, backup_frequency, backup_keep_days FROM site_settings WHERE id = 1");
 
 include 'includes/header.php';
 ?>

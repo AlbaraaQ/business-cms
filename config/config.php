@@ -29,7 +29,7 @@ define('ADMIN_PANEL_LOCKED', false);
 
 // إعدادات أخرى
 define('TIMEZONE', 'Asia/Riyadh');
-define('DEBUG_MODE', false);
+define('DEBUG_MODE', true); // Enabled for development and error sweeping
 
 // تعيين المنطقة الزمنية
 date_default_timezone_set(TIMEZONE);

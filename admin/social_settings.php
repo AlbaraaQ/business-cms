@@ -5,8 +5,18 @@
  * تتيح للمدير إدارة روابط وإعدادات الشبكات الاجتماعية
  */
 
-require_once '../includes/init.php';
-require_once '../includes/functions/admin_auth.php';
+require_once __DIR__ . '/init.php'; // Loads admin-specific initialization
+// admin_auth.php contains functions like admin_login, admin_logout, is_admin_logged_in (specific version)
+// It's assumed that PROJECT_ROOT is defined via config.php loaded in admin/init.php
+// and that admin_auth.php's dependencies (like db_query) are met by what admin/init.php sets up,
+// OR that admin/init.php will be augmented to make these compatible.
+// For now, directly including it using PROJECT_ROOT.
+if (defined('PROJECT_ROOT')) {
+    require_once PROJECT_ROOT . '/includes/functions/admin_auth.php';
+} else {
+    // Fallback or error if PROJECT_ROOT is not defined, though it should be by admin/init.php
+    require_once dirname(__DIR__) . '/includes/functions/admin_auth.php';
+}
 
 // التحقق من تسجيل الدخول
 check_admin_login();
@@ -24,13 +34,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sort_order = (int)$_POST['sort_order'];
             
             // تحديث الإعدادات
-            $stmt = $db->prepare("UPDATE social_settings SET url = ?, username = ?, is_active = ?, sort_order = ?, updated_at = NOW() WHERE id = ?");
-            $stmt->execute([$url, $username, $is_active, $sort_order, $platform_id]);
-            
-            // تسجيل النشاط
-            log_activity($_SESSION['admin_id'], 'update_social_settings', 'social_settings', $platform_id);
-            
-            $success_message = "تم تحديث إعدادات الشبكة الاجتماعية بنجاح";
+            $sql_update = "UPDATE social_settings SET url = :url, username = :username, is_active = :is_active, sort_order = :sort_order, updated_at = NOW() WHERE id = :id";
+            $params_update = [
+                ':url' => $url, ':username' => $username, ':is_active' => $is_active,
+                ':sort_order' => $sort_order, ':id' => $platform_id
+            ];
+            if ($db->execute($sql_update, $params_update)) {
+                // تسجيل النشاط
+                log_activity($_SESSION['admin_id'], 'update_social_settings', 'social_settings', $platform_id);
+                $success_message = "تم تحديث إعدادات الشبكة الاجتماعية بنجاح";
+            } else {
+                $error_message = "فشل تحديث إعدادات الشبكة الاجتماعية.";
+            }
             break;
             
         case 'add_social':
@@ -41,23 +56,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sort_order = (int)$_POST['sort_order'];
             
             // التحقق من عدم وجود المنصة بالفعل
-            $stmt = $db->prepare("SELECT COUNT(*) FROM social_settings WHERE platform = ?");
-            $stmt->execute([$platform]);
-            $exists = $stmt->fetchColumn();
+            $count_platform = $db->queryOne("SELECT COUNT(*) as count FROM social_settings WHERE platform = :platform", [':platform' => $platform]);
+            $exists = ($count_platform && $count_platform['count'] > 0);
             
             if ($exists) {
                 $error_message = "هذه المنصة موجودة بالفعل";
             } else {
                 // إضافة منصة جديدة
-                $stmt = $db->prepare("INSERT INTO social_settings (platform, url, username, is_active, sort_order) VALUES (?, ?, ?, ?, ?)");
-                $stmt->execute([$platform, $url, $username, $is_active, $sort_order]);
-                
-                $platform_id = $db->lastInsertId();
-                
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'add_social_platform', 'social_settings', $platform_id);
-                
-                $success_message = "تمت إضافة منصة جديدة بنجاح";
+                $sql_insert = "INSERT INTO social_settings (platform, url, username, is_active, sort_order) VALUES (:platform, :url, :username, :is_active, :sort_order)";
+                $params_insert = [
+                    ':platform' => $platform, ':url' => $url, ':username' => $username,
+                    ':is_active' => $is_active, ':sort_order' => $sort_order
+                ];
+                if ($db->execute($sql_insert, $params_insert)) {
+                    $platform_id = $db->lastInsertId();
+                    // تسجيل النشاط
+                    log_activity($_SESSION['admin_id'], 'add_social_platform', 'social_settings', $platform_id);
+                    $success_message = "تمت إضافة منصة جديدة بنجاح";
+                } else {
+                    $error_message = "فشل إضافة منصة جديدة.";
+                }
             }
             break;
             
@@ -65,26 +83,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $platform_id = (int)$_POST['platform_id'];
             
             // الحصول على بيانات المنصة قبل الحذف
-            $stmt = $db->prepare("SELECT * FROM social_settings WHERE id = ?");
-            $stmt->execute([$platform_id]);
-            $platform_data = $stmt->fetch(PDO::FETCH_ASSOC);
+            $platform_data = $db->queryOne("SELECT * FROM social_settings WHERE id = :id", [':id' => $platform_id]);
             
             if ($platform_data) {
-                $stmt = $db->prepare("DELETE FROM social_settings WHERE id = ?");
-                $stmt->execute([$platform_id]);
-                
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'delete_social_platform', 'social_settings', $platform_id, $platform_data);
-                
-                $success_message = "تم حذف المنصة بنجاح";
+                if ($db->execute("DELETE FROM social_settings WHERE id = :id", [':id' => $platform_id])) {
+                    // تسجيل النشاط
+                    log_activity($_SESSION['admin_id'], 'delete_social_platform', 'social_settings', $platform_id, $platform_data);
+                    $success_message = "تم حذف المنصة بنجاح";
+                } else {
+                    $error_message = "فشل حذف المنصة.";
+                }
             }
             break;
     }
 }
 
 // الحصول على إعدادات الشبكات الاجتماعية
-$stmt = $db->query("SELECT * FROM social_settings ORDER BY sort_order ASC");
-$social_settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$social_settings = $db->query("SELECT * FROM social_settings ORDER BY sort_order ASC");
 
 include 'includes/header.php';
 ?>
