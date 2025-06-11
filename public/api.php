@@ -84,77 +84,56 @@ file_put_contents(ROOT_PATH . '/logs/api_actions.log',
 try {
     switch ($action) {
         case 'get_site_layout_data':
-            // جلب الإعدادات
-            $settings = $db->queryOne("SELECT * FROM settings LIMIT 1") ?: [];
-            
-            // تحويل JSON strings إلى arrays
-            if (isset($settings['enabled_frontend_sections'])) {
-                $settings['enabled_frontend_sections'] = json_decode($settings['enabled_frontend_sections'], true) ?: [];
-            }
-            
-            // جلب أقسام الصفحة الرئيسية
-            $sections = $db->query("SELECT * FROM homepage_sections WHERE is_visible = 1 ORDER BY section_order ASC") ?: [];
-            
-            foreach ($sections as &$section) {
-                if (!empty($section['data_attributes'])) {
-                    $section['data_attributes'] = json_decode($section['data_attributes'], true) ?: [];
-                }
-                
-                // جلب البيانات الخاصة بكل قسم
-                switch ($section['section_type']) {
-                    case 'services_overview':
-                        $limit = $section['data_attributes']['limit'] ?? 6;
-                        $section['data_attributes']['services'] = $db->query(
-                            "SELECT service_id, title, slug, short_description, image 
-                             FROM services WHERE is_active = 1 
-                             ORDER BY `order` ASC LIMIT ?", 
-                            [$limit]
-                        ) ?: [];
-                        break;
-                        
-                    case 'projects_showcase':
-                        $limit = $section['data_attributes']['limit'] ?? 6;
-                        $section['data_attributes']['projects'] = $db->query(
-                            "SELECT project_id, title, slug, short_description, main_image, category 
-                             FROM projects WHERE is_active = 1 
-                             ORDER BY `order` ASC LIMIT ?", 
-                            [$limit]
-                        ) ?: [];
-                        break;
-                        
-                    case 'testimonials_slider':
-                        $limit = $section['data_attributes']['limit'] ?? 5;
-                        $section['data_attributes']['testimonials'] = $db->query(
-                            "SELECT testimonial_id, client_name, client_photo, feedback, rating, client_title_company 
-                             FROM testimonials WHERE is_approved = 1 
-                             ORDER BY `order` ASC LIMIT ?", 
-                            [$limit]
-                        ) ?: [];
-                        break;
-                        
-                    case 'facts_counter':
-                        $section['data_attributes']['facts'] = $db->query(
-                            "SELECT fact_id, title, number, icon, prefix, suffix 
-                             FROM facts 
-                             ORDER BY `order` ASC"
-                        ) ?: [];
-                        break;
+            // Fetch settings from new key-value table
+            $settings_result = $db->query("SELECT setting_name, setting_value FROM settings");
+            $site_settings_assoc = [];
+            if ($settings_result) {
+                foreach ($settings_result as $row) {
+                    $site_settings_assoc[$row['setting_name']] = $row['setting_value'];
                 }
             }
+
+            // Decode enabled_frontend_sections if it exists
+            if (isset($site_settings_assoc['enabled_frontend_sections'])) {
+                $site_settings_assoc['enabled_frontend_sections'] = json_decode($site_settings_assoc['enabled_frontend_sections'], true) ?: [];
+            }
             
-            // جلب ملخص الخدمات للفوتر
+            // Fetch generic sections
+            $sections = $db->query("SELECT id, name, content, image_url, video_url FROM sections ORDER BY created_at ASC") ?: [];
+            // Note: The old logic of fetching specific data (services, projects, etc.) per section_type within this loop is removed.
+            // The frontend (main.js) will now be responsible for how it uses the generic sections and the global data lists.
+
+            // Fetch all data types that might be displayed in sections or globally
+            $all_services = $db->query(
+                "SELECT id, name, description, icon_class FROM services ORDER BY created_at DESC LIMIT 6"
+            ) ?: [];
+
+            $all_projects = $db->query(
+                "SELECT id, title, description, image_url, project_url FROM projects ORDER BY created_at DESC LIMIT 6"
+            ) ?: [];
+
+            $all_testimonials = $db->query(
+                "SELECT id, author_name, testimonial_text, author_image_url FROM testimonials ORDER BY created_at DESC LIMIT 5"
+            ) ?: [];
+            
+            $all_facts = $db->query(
+                "SELECT id, fact_text, fact_value, icon_class FROM facts ORDER BY id ASC" // Or some other meaningful order
+            ) ?: [];
+            
+            // Fetch services summary for footer (using new schema)
             $services_summary = $db->query(
-                "SELECT service_id, title, slug 
-                 FROM services 
-                 WHERE is_active = 1 
-                 ORDER BY `order` ASC LIMIT 4"
+                "SELECT id, name, icon_class FROM services ORDER BY created_at DESC LIMIT 4"
             ) ?: [];
             
             send_json_response([
                 'success' => true,
                 'data' => [
-                    'settings' => $settings,
+                    'settings' => $site_settings_assoc, // Use the new associative array
                     'sections' => $sections,
+                    'all_services' => $all_services,
+                    'all_projects' => $all_projects,
+                    'all_testimonials' => $all_testimonials,
+                    'all_facts' => $all_facts,
                     'services_summary' => $services_summary
                 ]
             ]);
@@ -163,11 +142,10 @@ try {
         case 'get_services':
             $limit = (int)($_GET['limit'] ?? 6);
             $services = $db->query(
-                "SELECT service_id, title, slug, short_description, image 
+                "SELECT id, name, description, icon_class
                  FROM services 
-                 WHERE is_active = 1 
-                 ORDER BY `order` ASC LIMIT ?", 
-                [$limit]
+                 ORDER BY created_at DESC LIMIT :limit",
+                [':limit' => $limit]
             ) ?: [];
             
             send_json_response([
@@ -179,16 +157,16 @@ try {
             break;
 
         case 'get_service_details':
-            $slug = sanitize_input($_GET['slug'] ?? '');
-            if (empty($slug)) {
-                send_json_response(['success' => false, 'message' => 'Service slug is required'], 400);
+            $service_id = (int)($_GET['id'] ?? 0); // Expect 'id'
+            if ($service_id <= 0) {
+                send_json_response(['success' => false, 'message' => 'Service ID is required and must be a number'], 400);
             }
             
             $service = $db->queryOne(
-                "SELECT service_id, title, slug, short_description, full_description, image 
+                "SELECT id, name, description, icon_class
                  FROM services 
-                 WHERE slug = ? AND is_active = 1", 
-                [$slug]
+                 WHERE id = :id",
+                [':id' => $service_id]
             );
             
             if ($service) {
@@ -206,11 +184,10 @@ try {
         case 'get_projects':
             $limit = (int)($_GET['limit'] ?? 6);
             $projects = $db->query(
-                "SELECT project_id, title, slug, short_description, main_image, category 
+                "SELECT id, title, description, image_url, project_url
                  FROM projects 
-                 WHERE is_active = 1 
-                 ORDER BY `order` ASC LIMIT ?", 
-                [$limit]
+                 ORDER BY created_at DESC LIMIT :limit",
+                [':limit' => $limit]
             ) ?: [];
             
             send_json_response([
@@ -222,31 +199,24 @@ try {
             break;
 
         case 'get_project_details':
-            $slug = sanitize_input($_GET['slug'] ?? '');
-            if (empty($slug)) {
-                send_json_response(['success' => false, 'message' => 'Project slug is required'], 400);
+            $project_id = (int)($_GET['id'] ?? 0); // Expect 'id'
+            if ($project_id <= 0) {
+                send_json_response(['success' => false, 'message' => 'Project ID is required and must be a number.'], 400);
             }
             
             $project = $db->queryOne(
-                "SELECT project_id, title, slug, short_description, full_description, 
-                        main_image, category, completion_date, client_name, location 
+                "SELECT id, title, description, image_url, project_url
                  FROM projects 
-                 WHERE slug = ? AND is_active = 1", 
-                [$slug]
+                 WHERE id = :id",
+                [':id' => $project_id]
             );
             
             if ($project) {
-                $project['additional_images'] = $db->query(
-                    "SELECT image_id, image_path, caption 
-                     FROM project_images 
-                     WHERE project_id = ?", 
-                    [$project['project_id']]
-                ) ?: [];
-                
+                // $project['additional_images'] logic removed
                 send_json_response([
                     'success' => true,
                     'data' => [
-                        'project' => $project
+                        'project' => $project // Contains only fields from the projects table
                     ]
                 ]);
             } else {
@@ -257,11 +227,10 @@ try {
         case 'get_testimonials':
             $limit = (int)($_GET['limit'] ?? 6);
             $testimonials = $db->query(
-                "SELECT testimonial_id, client_name, client_photo, feedback, rating, client_title_company 
+                "SELECT id, author_name, testimonial_text, author_image_url
                  FROM testimonials 
-                 WHERE is_approved = 1 
-                 ORDER BY `order` ASC LIMIT ?", 
-                [$limit]
+                 ORDER BY created_at DESC LIMIT :limit",
+                [':limit' => $limit]
             ) ?: [];
             
             send_json_response([
@@ -276,27 +245,37 @@ try {
             if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
                 send_json_response(['success' => false, 'message' => 'Method not allowed'], 405);
             }
+            // CSRF verification should be added for POST requests if not already handled globally for API
+            if (function_exists('verify_csrf_token') && !verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
+                 send_json_response(['success' => false, 'message' => 'CSRF token validation failed.'], 403);
+            }
             
-            $required = ['client_name', 'feedback'];
+            $required = ['author_name', 'testimonial_text']; // Changed from client_name, feedback
             foreach ($required as $field) {
                 if (empty($_POST[$field])) {
-                    send_json_response(['success' => false, 'message' => "$field is required"], 400);
+                    // Map form field names if they are different from DB columns
+                    $form_field_name = $field;
+                    if ($field === 'author_name' && isset($_POST['client_name'])) $form_field_name = 'client_name';
+                    if ($field === 'testimonial_text' && isset($_POST['feedback'])) $form_field_name = 'feedback';
+
+                    if (empty($_POST[$form_field_name])) {
+                         send_json_response(['success' => false, 'message' => "$form_field_name is required"], 400);
+                    }
                 }
             }
             
             $data = [
-                'client_name' => sanitize_input($_POST['client_name']),
-                'client_title_company' => sanitize_input($_POST['client_title_company'] ?? ''),
-                'feedback' => sanitize_input($_POST['feedback']),
-                'rating' => isset($_POST['rating']) ? (int)$_POST['rating'] : null,
-                'is_approved' => 0,
-                'created_at' => date('Y-m-d H:i:s')
+                // Map form field `client_name` to `author_name`
+                'author_name' => sanitize_input($_POST['client_name'] ?? $_POST['author_name']),
+                // Map form field `feedback` to `testimonial_text`
+                'testimonial_text' => sanitize_input($_POST['feedback'] ?? $_POST['testimonial_text']),
+                // author_image_url is not handled here as public form usually doesn't upload images for testimonials
+                // created_at and updated_at will be set by NOW()
             ];
             
             $db->execute(
-                "INSERT INTO testimonials 
-                (client_name, client_title_company, feedback, rating, is_approved, created_at) 
-                VALUES (:client_name, :client_title_company, :feedback, :rating, :is_approved, :created_at)",
+                "INSERT INTO testimonials (author_name, testimonial_text, created_at, updated_at)
+                VALUES (:author_name, :testimonial_text, NOW(), NOW())",
                 $data
             );
             

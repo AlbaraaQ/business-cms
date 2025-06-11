@@ -110,15 +110,15 @@ function update_service($service_id, $data) { // $service_id is the ID of the se
     foreach (array_keys($update_data) as $key) {
         $set_clauses[] = "$key = :$key";
     }
-    
+
     // Add updated_at timestamp
     $set_clauses[] = "updated_at = NOW()";
-    
+
     $sql = "UPDATE services SET " . implode(', ', $set_clauses) . " WHERE id = :id";
-    
+
     // Add the service ID to the parameters for the WHERE clause
     $update_data[':id'] = $service_id;
-    
+
     // Map parameters for execute, ensuring correct placeholders
     $execute_params = [];
     foreach($update_data as $key => $value){
@@ -165,46 +165,32 @@ function get_featured_services($limit = 6) {
 }
 
 /**
- * عرض الخدمة في الواجهة الأمامية
+ * البحث في الخدمات
  * 
+ * @param string $keyword كلمة البحث
+ * @return array مصفوفة تحتوي على نتائج البحث
+ */
+function search_services($keyword) {
+    global $db;
+    
+    $keyword_param = '%' . $keyword . '%';
+    
+    $sql = "SELECT id, name, description, icon_class
+            FROM services
+            WHERE (name LIKE :keyword OR description LIKE :keyword)
+            ORDER BY created_at DESC";
+    
+    return $db->query($sql, [':keyword' => $keyword_param]);
+}
+
+/**
+ * عرض الخدمة في الواجهة الأمامية
+ *
  * @param array $service بيانات الخدمة
  * @return string كود HTML لعرض الخدمة
  */
+// Function render_service_card commented out and content removed
 /*
-function render_service_card($service) {
-    $output = '<div class="col-md-4 mb-4">';
-    $output .= '<div class="card service-card h-100">';
-    
-    // صورة الخدمة
-    if (!empty($service['image'])) { // This would need to be changed if image handling changes
-        $output .= '<div class="service-image">';
-        $output .= lazy_load_image(UPLOAD_URL . '/' . $service['image'], $service['name'], 'card-img-top'); // title -> name
-        $output .= '</div>';
-    } elseif (!empty($service['icon_class'])) { // Display icon if no image
-        $output .= '<div class="service-icon-display text-center p-3"><i class="' . htmlspecialchars($service['icon_class']) . ' fa-3x"></i></div>';
-    }
-    
-    $output .= '<div class="card-body">';
-    
-    // عنوان الخدمة
-    $output .= '<h3 class="card-title">' . htmlspecialchars($service['name']) . '</h3>'; // title -> name
-    
-    // وصف الخدمة - using description, truncated
-    $output .= '<p class="card-text">' . truncate_text($service['description'], 100) . '</p>';
-    
-    $output .= '</div>';
-    
-    $output .= '<div class="card-footer bg-transparent border-0">';
-    // Link generation would need to be updated if slugs are removed or structure changes
-    // For now, assuming a generic link or placeholder
-    $output .= '<a href="service-details.php?id=' . $service['id'] . '" class="btn btn-primary">عرض المزيد</a>';
-    $output .= '</div>';
-    
-    $output .= '</div>';
-    $output .= '</div>';
-    
-    return $output;
-}
 */
 
 /**
@@ -214,34 +200,8 @@ function render_service_card($service) {
  * @param array $service_images صور الخدمة (This parameter might become obsolete or change)
  * @return string كود HTML لعرض تفاصيل الخدمة
  */
+// Function render_service_details commented out and content removed
 /*
-function render_service_details($service, $service_images = []) { // service_images might be removed or handled differently
-    $output = '<div class="service-details">';
-    
-    // عنوان الخدمة
-    $output .= '<h1 class="service-title">' . htmlspecialchars($service['name']) . '</h1>'; // title -> name
-    
-    // Icon if available
-    if (!empty($service['icon_class'])) {
-        $output .= '<div class="service-main-icon mb-3"><i class="' . htmlspecialchars($service['icon_class']) . ' fa-2x"></i></div>';
-    }
-    
-    // وصف الخدمة
-    $output .= '<div class="service-description mb-4">';
-    $output .= '<h2>وصف الخدمة</h2>';
-    // Assuming description field contains HTML if it was from a rich text editor
-    $output .= '<div class="content">' . ($service['description']) . '</div>';
-    $output .= '</div>';
-    
-    // زر طلب الخدمة (link might need update)
-    $output .= '<div class="service-cta mt-4">';
-    $output .= '<a href="contact.php?service=' . urlencode($service['name']) . '" class="btn btn-primary btn-lg">طلب الخدمة</a>';
-    $output .= '</div>';
-    
-    $output .= '</div>';
-    
-    return $output;
-}
 */
 
 /**
@@ -250,26 +210,8 @@ function render_service_details($service, $service_images = []) { // service_ima
  * @param array $related_services الخدمات ذات الصلة
  * @return string كود HTML لعرض الخدمات ذات الصلة
  */
+// Function render_related_services commented out and content removed
 /*
-function render_related_services($related_services) {
-    if (empty($related_services)) {
-        return '';
-    }
-    
-    $output = '<div class="related-services mt-5">';
-    $output .= '<h2 class="section-title mb-4">خدمات ذات صلة</h2>';
-    
-    $output .= '<div class="row">';
-    
-    // foreach ($related_services as $service) {
-    //     $output .= render_service_card($service); // This function is commented out
-    // }
-    
-    $output .= '</div>';
-    $output .= '</div>';
-    
-    return $output;
-}
 */
 
 /**
@@ -279,10 +221,7 @@ function render_related_services($related_services) {
  * @param string $active_category التصنيف النشط
  * @return string كود HTML لعرض تصنيفات الخدمات
  */
+// Function render_service_categories commented out and content removed
 /*
-function render_service_categories($categories, $active_category = '') {
-    // This function is likely obsolete with the removal of categories from services table
-    return '';
-}
 */
 }

@@ -52,8 +52,8 @@ require_once FUNCTIONS_DIR . '/utilities.php';
 require_once FUNCTIONS_DIR . '/service_functions.php';
 require_once FUNCTIONS_DIR . '/project_functions.php';
 require_once FUNCTIONS_DIR . '/admin_auth.php';
-require_once FUNCTIONS_DIR . '/code_optimization.php';
-require_once FUNCTIONS_DIR . '/future_recommendations.php';
+// require_once FUNCTIONS_DIR . '/code_optimization.php'; // Commented out
+// require_once FUNCTIONS_DIR . '/future_recommendations.php'; // Commented out
 
 // تحميل واستخدام الفئة Database Core
 if (defined('PROJECT_ROOT')) {
@@ -185,6 +185,7 @@ function load_admin_assets() {
  * @param string $keywords الكلمات المفتاحية
  * @param string $canonical_url الرابط القانوني
  */
+/*
 function add_seo_tags($title = '', $description = '', $keywords = '', $canonical_url = '') {
     // استخدام القيم الافتراضية إذا لم يتم توفير قيم
     $title = $title ?: SITE_NAME;
@@ -214,4 +215,55 @@ function add_seo_tags($title = '', $description = '', $keywords = '', $canonical
     
     // إنشاء وسوم SEO
     echo generate_seo_tags($title, $description, $keywords, $canonical_url);
+}
+*/
+
+// Pre-load essential site settings
+$GLOBALS['site_settings_global'] = [];
+if (isset($db) && $db instanceof Database) {
+    $essential_settings_keys = [
+        'site_name', 'site_description', 'contact_email', 'contact_phone',
+        'contact_address', 'google_analytics_id', 'site_logo_path', // Changed from 'logo'
+        'site_favicon_path', // Changed from 'favicon'
+        'facebook_url', 'twitter_url', 'instagram_url', 'linkedin_url', 'youtube_url', 'whatsapp_number' // For social links in footer
+    ];
+    $placeholders = rtrim(str_repeat('?,', count($essential_settings_keys)), ',');
+
+    // It's better to fetch all settings once if many are needed, or fetch individually if few.
+    // For this specific list, fetching individually or with a WHERE IN clause is fine.
+    $settings_sql = "SELECT setting_name, setting_value FROM settings WHERE setting_name IN ($placeholders)";
+    try {
+        $loaded_settings = $db->query($settings_sql, $essential_settings_keys);
+        if ($loaded_settings) {
+            foreach ($loaded_settings as $row) {
+                $GLOBALS['site_settings_global'][$row['setting_name']] = $row['setting_value'];
+            }
+        }
+    } catch (Exception $e) {
+        log_error("Failed to load global site settings in init.php: " . $e->getMessage());
+    }
+
+    // Provide defaults for any essential setting not found in the DB
+    $default_values = [
+        'site_name' => 'اسم الموقع الافتراضي',
+        'site_description' => 'وصف الموقع الافتراضي.',
+        // Add other necessary defaults here
+    ];
+    foreach ($essential_settings_keys as $key) {
+        if (!isset($GLOBALS['site_settings_global'][$key])) {
+            $GLOBALS['site_settings_global'][$key] = $default_values[$key] ?? null;
+        }
+    }
+} else {
+    log_error("Database connection not available in init.php for loading global settings.");
+    // Populate with defaults if DB is not available
+    foreach ($default_sitemap_settings as $key => $value) { // Assuming $default_sitemap_settings is still in scope from generate_sitemap.php, which is not ideal.
+                                                            // This part needs careful review of where defaults should live.
+                                                            // For now, this is a placeholder for robust default handling.
+         if (strpos($key, 'sitemap_') !== 0 && !isset($GLOBALS['site_settings_global'][$key])) { // Avoid overwriting sitemap defaults if they were set for some reason
+              $GLOBALS['site_settings_global'][$key] = $value;
+         }
+    }
+     if (!isset($GLOBALS['site_settings_global']['site_name'])) $GLOBALS['site_settings_global']['site_name'] = 'اسم الموقع الافتراضي';
+     if (!isset($GLOBALS['site_settings_global']['site_description'])) $GLOBALS['site_settings_global']['site_description'] = 'وصف الموقع الافتراضي.';
 }

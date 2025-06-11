@@ -367,6 +367,8 @@ function create_project_link($slug) {
     return create_page_link('project-details.php', ['slug' => $slug]);
 }
 
+// track_page_visit() function removed.
+
 /**
  * Get SEO settings for a specific page identifier.
  * This function is intended for public-facing pages.
@@ -408,4 +410,66 @@ function get_seo_for_page($page_name) {
     return $seo_data ?: false; // Return fetched data or false if nothing found
 }
 
+/**
+ * Get public social media links from the settings table.
+ *
+ * @return array An array of social links, each with 'platform_name', 'url', and 'icon_class'.
+ */
+function get_public_social_links() {
+    global $db;
+    if (!$db) {
+        // Simplified error handling for this function, assumes $db should be available.
+        log_error("Database connection not available in get_public_social_links.");
+        return [];
+    }
+
+    $social_link_keys = [
+        'facebook_url', 'twitter_url', 'instagram_url', 'linkedin_url',
+        'youtube_url', 'whatsapp_number' // whatsapp_number might need prefix like 'https://wa.me/'
+    ];
+
+    // Constructing the IN clause for SQL
+    $placeholders = rtrim(str_repeat('?,', count($social_link_keys)), ',');
+    $sql = "SELECT setting_name, setting_value FROM settings WHERE setting_name IN ($placeholders)";
+
+    $results = $db->query($sql, $social_link_keys);
+
+    $social_links = [];
+    $icon_map = [
+        'facebook_url' => 'fab fa-facebook-f',
+        'twitter_url' => 'fab fa-twitter',
+        'instagram_url' => 'fab fa-instagram',
+        'linkedin_url' => 'fab fa-linkedin-in',
+        'youtube_url' => 'fab fa-youtube',
+        'whatsapp_number' => 'fab fa-whatsapp'
+    ];
+    $platform_name_map = [
+        'facebook_url' => 'Facebook',
+        'twitter_url' => 'Twitter',
+        'instagram_url' => 'Instagram',
+        'linkedin_url' => 'LinkedIn',
+        'youtube_url' => 'YouTube',
+        'whatsapp_number' => 'WhatsApp'
+    ];
+
+    if ($results) {
+        foreach ($results as $row) {
+            if (!empty($row['setting_value'])) {
+                $url = $row['setting_value'];
+                if ($row['setting_name'] === 'whatsapp_number') {
+                    // Prepend WhatsApp URL scheme if it's just a number
+                    if (is_numeric(str_replace(['+', ' '], '', $url))) {
+                         $url = 'https://wa.me/' . preg_replace('/[^0-9]/', '', $url);
+                    }
+                }
+                $social_links[] = [
+                    'platform_name' => $platform_name_map[$row['setting_name']] ?? $row['setting_name'],
+                    'url' => $url,
+                    'icon_class' => $icon_map[$row['setting_name']] ?? 'fas fa-link'
+                ];
+            }
+        }
+    }
+    return $social_links;
+}
 ?>

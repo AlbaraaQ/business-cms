@@ -6,47 +6,56 @@
  */
 
 // تضمين الملفات اللازمة
-require_once 'includes/functions.php';
-require_once 'includes/functions/service_functions.php';
-require_once 'includes/functions/project_functions.php';
-require_once 'includes/functions/future_recommendations.php';
+require_once 'includes/init.php'; // init.php should handle including functions.php
+require_once INCLUDES_PATH . '/functions/service_functions.php';
+// project_functions.php and future_recommendations.php might not be needed anymore
+// require_once INCLUDES_PATH . '/functions/project_functions.php';
+// require_once INCLUDES_PATH . '/functions/future_recommendations.php';
 
 // الحصول على معرف الخدمة من الرابط
-$slug = isset($_GET['slug']) ? $_GET['slug'] : '';
+$service_id = isset($_GET['id']) ? (int)$_GET['id'] : 0; // Expect 'id'
 
 // التحقق من وجود معرف الخدمة
-if (empty($slug)) {
-    // إعادة التوجيه إلى الصفحة الرئيسية إذا لم يتم تحديد معرف الخدمة
-    header('Location: index.php');
+if ($service_id <= 0) {
+    // إعادة التوجيه إلى الصفحة الرئيسية إذا لم يتم تحديد معرف الخدمة صالح
+    redirect(base_url()); // Use redirect function from functions.php and base_url
     exit;
 }
 
 // الحصول على بيانات الخدمة
-$service = get_service_by_slug($slug);
+$service = get_service_by_id($service_id); // Use new function
 
 // التحقق من وجود الخدمة
 if (!$service) {
-    // إعادة التوجيه إلى الصفحة الرئيسية إذا لم يتم العثور على الخدمة
-    header('Location: index.php');
+    // عرض صفحة 404 إذا لم يتم العثور على الخدمة
+    http_response_code(404);
+    // You might want to include a 404.php page here or a simple message
+    // For now, just redirecting to home as a fallback for simplicity
+    redirect(base_url('404.php')); // Or a more specific error page
     exit;
 }
 
-// الحصول على صور الخدمة
-$service_images = get_service_images($service['service_id']);
+// $service_images removed as it's no longer a separate table for services
+// $related_services removed as it depended on categories
 
-// الحصول على الخدمات ذات الصلة
-$related_services = get_related_services($service['service_id'], 3);
+// تعيين عنوان الصفحة ووصفها using new SEO function
+$page_name_for_seo = 'service_' . $service['id'];
+$seo_settings = [];
+if (function_exists('get_seo_for_page')) {
+    $seo_settings = get_seo_for_page($page_name_for_seo);
+}
 
-// تعيين عنوان الصفحة ووصفها
-$page_title = !empty($service['meta_title']) ? $service['meta_title'] : $service['title'];
-$page_description = !empty($service['meta_description']) ? $service['meta_description'] : $service['short_description'];
-$page_keywords = !empty($service['keywords']) ? $service['keywords'] : '';
+$page_title = $seo_settings['meta_title'] ?? htmlspecialchars($service['name']);
+$page_description = $seo_settings['meta_description'] ?? truncate_text(strip_tags(htmlspecialchars_decode($service['description'] ?? '')), 155);
+$page_keywords = $seo_settings['meta_keywords'] ?? '';
 
-// تتبع زيارة الصفحة
-track_page_visit('خدمة: ' . $service['title'], 'service-details.php?slug=' . $slug);
+
+// تتبع زيارة الصفحة - This function might need an update if it logs to DB table that changed
+// For now, assuming it's a generic tracker or will be updated/removed later.
+// track_page_visit('خدمة: ' . $service['name'], 'service-details.php?id=' . $service_id);
 
 // تضمين رأس الصفحة
-include 'includes/header.php';
+include INCLUDES_PATH . '/header.php';
 ?>
 
 <!-- قسم تفاصيل الخدمة -->
@@ -61,38 +70,24 @@ include 'includes/header.php';
         </div>
 
         <!-- عنوان الخدمة -->
-        <h1 class="text-3xl md:text-4xl font-bold text-dark-gray mb-6"><?php echo htmlspecialchars($service['title']); ?></h1>
+        <h1 class="text-3xl md:text-4xl font-bold text-dark-gray mb-6">
+            <?php if (!empty($service['icon_class'])): ?>
+                <i class="<?php echo htmlspecialchars($service['icon_class']); ?> text-primary mr-2"></i>
+            <?php endif; ?>
+            <?php echo htmlspecialchars($service['name']); ?>
+        </h1>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <!-- تفاصيل الخدمة -->
             <div class="lg:col-span-2">
-                <!-- الصورة الرئيسية -->
-                <?php if (!empty($service['image'])): ?>
-                <div class="mb-8 rounded-lg overflow-hidden shadow-md">
-                    <img src="<?php echo UPLOAD_URL . htmlspecialchars($service['image']); ?>" alt="<?php echo htmlspecialchars($service['title']); ?>" class="w-full h-auto">
-                </div>
-                <?php endif; ?>
+                {/* Main image and gallery removed */}
 
                 <!-- الوصف التفصيلي -->
                 <div class="prose max-w-none mb-8">
-                    <?php echo $service['full_description']; ?>
+                    <?php echo nl2br(htmlspecialchars_decode($service['description'])); ?> {/* Use description, nl2br if it's plain text, or just echo if HTML */}
                 </div>
 
-                <!-- معرض الصور -->
-                <?php if (!empty($service_images)): ?>
-                <div class="mb-8">
-                    <h3 class="text-xl font-bold text-dark-gray mb-4">معرض الصور</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <?php foreach ($service_images as $image): ?>
-                        <a href="<?php echo UPLOAD_URL . htmlspecialchars($image['image_path']); ?>" data-fancybox="service-gallery" class="block rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
-                            <img src="<?php echo UPLOAD_URL . htmlspecialchars($image['image_path']); ?>" alt="<?php echo htmlspecialchars($service['title']); ?>" class="w-full h-40 object-cover lazy" data-src="<?php echo UPLOAD_URL . htmlspecialchars($image['image_path']); ?>">
-                        </a>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-                <?php endif; ?>
-
-                <!-- زر طلب الخدمة -->
+                {/* زر طلب الخدمة */}
                 <div class="mt-8">
                     <a href="#contact" class="btn-primary inline-block">
                         <i data-feather="phone" class="w-4 h-4 ml-2"></i>
@@ -104,57 +99,11 @@ include 'includes/header.php';
             <!-- الشريط الجانبي -->
             <div class="lg:col-span-1">
                 <div class="bg-white rounded-lg shadow-subtle p-6">
-                    <!-- مميزات الخدمة -->
-                    <div class="mb-8">
-                        <h3 class="text-xl font-bold text-dark-gray mb-4">مميزات الخدمة</h3>
-                        <ul class="space-y-3">
-                            <?php 
-                            // عرض مميزات الخدمة إذا كانت موجودة
-                            $features = !empty($service['features']) ? explode("\n", $service['features']) : [
-                                'جودة عالية في التنفيذ',
-                                'فريق عمل محترف',
-                                'ضمان على جميع الأعمال',
-                                'أسعار تنافسية',
-                                'سرعة في التنفيذ'
-                            ];
-                            
-                            foreach ($features as $feature):
-                                if (!empty(trim($feature))):
-                            ?>
-                            <li class="flex items-start">
-                                <i data-feather="check-circle" class="w-5 h-5 text-primary ml-2 mt-0.5"></i>
-                                <span><?php echo htmlspecialchars(trim($feature)); ?></span>
-                            </li>
-                            <?php 
-                                endif;
-                            endforeach; 
-                            ?>
-                        </ul>
-                    </div>
+                    {/* Features section removed */}
+                    {/* Related services section removed */}
 
-                    <!-- الخدمات ذات الصلة -->
-                    <?php if (!empty($related_services)): ?>
-                    <div>
-                        <h3 class="text-xl font-bold text-dark-gray mb-4">خدمات ذات صلة</h3>
-                        <ul class="space-y-4">
-                            <?php foreach ($related_services as $related): ?>
-                            <li>
-                                <a href="service-details.php?slug=<?php echo htmlspecialchars($related['slug']); ?>" class="flex items-center group">
-                                    <?php if (!empty($related['image'])): ?>
-                                    <div class="w-16 h-16 rounded-md overflow-hidden ml-3 shadow-sm">
-                                        <img src="<?php echo UPLOAD_URL . htmlspecialchars($related['image']); ?>" alt="<?php echo htmlspecialchars($related['title']); ?>" class="w-full h-full object-cover lazy" data-src="<?php echo UPLOAD_URL . htmlspecialchars($related['image']); ?>">
-                                    </div>
-                                    <?php endif; ?>
-                                    <div>
-                                        <h4 class="font-semibold text-dark-gray group-hover:text-primary transition-colors"><?php echo htmlspecialchars($related['title']); ?></h4>
-                                        <p class="text-sm text-gray-500"><?php echo truncate_text($related['short_description'], 60); ?></p>
-                                    </div>
-                                </a>
-                            </li>
-                            <?php endforeach; ?>
-                        </ul>
-                    </div>
-                    <?php endif; ?>
+                    <h3 class="text-xl font-bold text-dark-gray mb-4">خدمات أخرى</h3>
+                    <p class="text-gray-600">قد ترغب في تصفح <a href="<?php echo base_url('services.php'); ?>" class="text-primary hover:underline">جميع خدماتنا</a>.</p>
                 </div>
             </div>
         </div>

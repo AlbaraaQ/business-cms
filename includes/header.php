@@ -6,23 +6,37 @@
  * ويتم تضمينه في جميع صفحات الموقع
  */
 
-// الحصول على إعدادات الموقع
-$site_settings = get_site_settings();
+// $site_settings = get_site_settings(); // Removed, use $GLOBALS['site_settings_global']
 
 // تعيين عنوان الصفحة الافتراضي إذا لم يتم تعيينه
 if (!isset($page_title)) {
-    $page_title = isset($site_settings['site_name']) ? $site_settings['site_name'] : 'الموقع';
+    $page_title = $GLOBALS['site_settings_global']['site_name'] ?? 'الموقع';
 }
 
 // تعيين إعدادات SEO الافتراضية إذا لم يتم تعيينها
-if (!isset($seo_settings)) {
-    $seo_settings = [
-        'meta_title' => $page_title,
-        'meta_description' => isset($site_settings['site_description']) ? $site_settings['site_description'] : '',
-        'keywords' => isset($site_settings['site_keywords']) ? $site_settings['site_keywords'] : '',
-        'canonical_url' => SITE_URL . $_SERVER['REQUEST_URI']
-    ];
+// $page_description and $page_keywords are now expected to be set by the calling page (e.g., index.php, service-details.php)
+// based on get_seo_for_page() or specific content.
+// The $seo_settings array is now expected to be populated by the calling page.
+// Fallbacks here are minimal.
+if (!isset($seo_settings) || !is_array($seo_settings)) {
+    $seo_settings = []; // Ensure it's an array
 }
+if (!isset($seo_settings['meta_title'])) {
+    $seo_settings['meta_title'] = $page_title;
+}
+if (!isset($seo_settings['meta_description'])) {
+    $seo_settings['meta_description'] = $GLOBALS['site_settings_global']['site_description'] ?? '';
+}
+if (!isset($seo_settings['meta_keywords'])) {
+    $seo_settings['meta_keywords'] = $GLOBALS['site_settings_global']['meta_keywords'] ?? ''; // Assuming 'meta_keywords' is a global setting key
+}
+if (!isset($seo_settings['canonical_url'])) {
+    $seo_settings['canonical_url'] = SITE_URL . $_SERVER['REQUEST_URI'];
+}
+if (!isset($seo_settings['og_image']) && isset($GLOBALS['site_settings_global']['og_image_path'])) { // Default OG image from global settings
+    $seo_settings['og_image'] = SITE_URL . UPLOAD_URL_PUBLIC_ACCESSIBLE_PATH . htmlspecialchars($GLOBALS['site_settings_global']['og_image_path']);
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -75,14 +89,18 @@ if (!isset($seo_settings)) {
     <?php optimize_page_performance(); ?>
     
     <!-- رمز تتبع Google Analytics (إذا كان متاحاً) -->
-    <?php if (isset($site_settings['google_analytics_id']) && !empty($site_settings['google_analytics_id'])): ?>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=<?php echo htmlspecialchars($site_settings['google_analytics_id']); ?>"></script>
+    <?php if (isset($GLOBALS['site_settings_global']['google_analytics_id']) && !empty($GLOBALS['site_settings_global']['google_analytics_id'])): ?>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=<?php echo htmlspecialchars($GLOBALS['site_settings_global']['google_analytics_id']); ?>"></script>
     <script>
         window.dataLayer = window.dataLayer || [];
         function gtag(){dataLayer.push(arguments);}
         gtag('js', new Date());
-        gtag('config', '<?php echo htmlspecialchars($site_settings['google_analytics_id']); ?>');
+        gtag('config', '<?php echo htmlspecialchars($GLOBALS['site_settings_global']['google_analytics_id']); ?>');
     </script>
+    <?php endif; ?>
+
+    <?php if (isset($GLOBALS['site_settings_global']['site_favicon_path']) && !empty($GLOBALS['site_settings_global']['site_favicon_path'])): ?>
+        <link rel="icon" href="<?php echo SITE_URL . UPLOAD_URL_PUBLIC_ACCESSIBLE_PATH . htmlspecialchars($GLOBALS['site_settings_global']['site_favicon_path']); ?>">
     <?php endif; ?>
 </head>
 <body>
@@ -91,11 +109,11 @@ if (!isset($seo_settings)) {
         <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
             <div class="container">
                 <!-- شعار الموقع -->
-                <a class="navbar-brand" href="index.php">
-                    <?php if (isset($site_settings['site_logo']) && !empty($site_settings['site_logo'])): ?>
-                        <img src="<?php echo UPLOAD_URL . htmlspecialchars($site_settings['site_logo']); ?>" alt="<?php echo htmlspecialchars($site_settings['site_name']); ?>" height="40">
+                <a class="navbar-brand" href="<?php echo base_url(); // Use base_url() for homepage link ?>">
+                    <?php if (isset($GLOBALS['site_settings_global']['site_logo_path']) && !empty($GLOBALS['site_settings_global']['site_logo_path'])): ?>
+                        <img src="<?php echo SITE_URL . UPLOAD_URL_PUBLIC_ACCESSIBLE_PATH . htmlspecialchars($GLOBALS['site_settings_global']['site_logo_path']); ?>" alt="<?php echo htmlspecialchars($GLOBALS['site_settings_global']['site_name'] ?? 'Site Logo'); ?>" height="40">
                     <?php else: ?>
-                        <?php echo htmlspecialchars($site_settings['site_name'] ?? 'الموقع'); ?>
+                        <?php echo htmlspecialchars($GLOBALS['site_settings_global']['site_name'] ?? 'الموقع'); ?>
                     <?php endif; ?>
                 </a>
                 
@@ -111,13 +129,13 @@ if (!isset($seo_settings)) {
                             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) === 'index.php' ? 'active' : ''; ?>" href="index.php">الرئيسية</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) === 'about.php' ? 'active' : ''; ?>" href="about.php">من نحن</a>
+                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) === 'about.php' ? 'active' : ''; ?>" href="<?php echo base_url('about.php'); ?>">من نحن</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) === 'services.php' ? 'active' : ''; ?>" href="services.php">خدماتنا</a>
+                            <a class="nav-link <?php echo (basename($_SERVER['PHP_SELF']) === 'index.php' && isset($_GET['#services'])) || basename($_SERVER['PHP_SELF']) === 'services.php' ? 'active' : ''; ?>" href="<?php echo base_url('index.php#services'); ?>">خدماتنا</a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) === 'projects.php' ? 'active' : ''; ?>" href="projects.php">مشاريعنا</a>
+                            <a class="nav-link <?php echo (basename($_SERVER['PHP_SELF']) === 'index.php' && isset($_GET['#projects'])) || basename($_SERVER['PHP_SELF']) === 'projects.php' ? 'active' : ''; ?>" href="<?php echo base_url('index.php#projects'); ?>">مشاريعنا</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link <?php echo basename($_SERVER['PHP_SELF']) === 'contact.php' ? 'active' : ''; ?>" href="contact.php">اتصل بنا</a>

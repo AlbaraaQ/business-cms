@@ -109,9 +109,9 @@ function update_project($project_id, $data) { // $project_id is the ID of the pr
         $set_clauses[] = "$key = :$key";
     }
     $set_clauses[] = "updated_at = NOW()";
-    
+
     $sql = "UPDATE projects SET " . implode(', ', $set_clauses) . " WHERE id = :id";
-    
+
     $execute_params = [];
     foreach($update_data as $key => $value){
         $execute_params[":$key"] = $value;
@@ -154,44 +154,32 @@ function get_featured_projects($limit = 6) {
 }
 
 /**
+ * البحث في المشاريع
+ *
+ * @param string $keyword كلمة البحث
+ * @return array مصفوفة تحتوي على نتائج البحث
+ */
+function search_projects($keyword) {
+    global $db;
+
+    $keyword_param = '%' . $keyword . '%';
+
+    $sql = "SELECT id, title, description, image_url, project_url
+            FROM projects
+            WHERE (title LIKE :keyword OR description LIKE :keyword)
+            ORDER BY created_at DESC";
+
+    return $db->query($sql, [':keyword' => $keyword_param]);
+}
+
+/**
  * عرض المشروع في الواجهة الأمامية
  * 
  * @param array $project بيانات المشروع
  * @return string كود HTML لعرض المشروع
  */
+// Function render_project_card commented out and content removed
 /*
-function render_project_card($project) {
-    $output = '<div class="col-md-4 mb-4">';
-    $output .= '<div class="card project-card h-100">';
-    
-    // صورة المشروع
-    if (!empty($project['image_url'])) { // Changed from main_image to image_url
-        $output .= '<div class="project-image">';
-        $output .= lazy_load_image(UPLOAD_URL . '/' . $project['image_url'], $project['title'], 'card-img-top');
-        $output .= '</div>';
-    }
-    
-    $output .= '<div class="card-body">';
-    
-    // عنوان المشروع
-    $output .= '<h3 class="card-title">' . htmlspecialchars($project['title']) . '</h3>';
-    
-    // وصف المشروع - using description (formerly short_description was used here)
-    $output .= '<p class="card-text">' . truncate_text($project['description'], 100) . '</p>';
-    
-    $output .= '</div>';
-    
-    $output .= '<div class="card-footer bg-transparent border-0">';
-    // Link generation would need update if slugs are removed. Assuming project_url or an ID-based link.
-    $project_link = !empty($project['project_url']) ? htmlspecialchars($project['project_url']) : 'project-details.php?id=' . $project['id'];
-    $output .= '<a href="' . $project_link . '" class="btn btn-primary"'.(!empty($project['project_url']) ? ' target="_blank"' : '').'>عرض المزيد</a>';
-    $output .= '</div>';
-    
-    $output .= '</div>';
-    $output .= '</div>';
-    
-    return $output;
-}
 */
 
 /**
@@ -201,38 +189,8 @@ function render_project_card($project) {
  * @param array $project_images صور المشروع (obsolete with new schema)
  * @return string كود HTML لعرض تفاصيل المشروع
  */
+// Function render_project_details commented out and content removed
 /*
-function render_project_details($project, $project_images = []) { // project_images is now obsolete
-    $output = '<div class="project-details">';
-    
-    // عنوان المشروع
-    $output .= '<h1 class="project-title">' . htmlspecialchars($project['title']) . '</h1>';
-    
-    // Project URL if exists
-    if (!empty($project['project_url'])) {
-        $output .= '<p><a href="'.htmlspecialchars($project['project_url']).'" target="_blank" class="btn btn-info">زيارة المشروع</a></p>';
-    }
-
-    // الصورة الرئيسية (image_url)
-    if (!empty($project['image_url'])) {
-        $output .= '<div class="project-main-image mb-4">';
-        $output .= '<a href="' . UPLOAD_URL . '/' . $project['image_url'] . '" data-fancybox>';
-        $output .= '<img src="' . UPLOAD_URL . '/' . $project['image_url'] . '" alt="' . htmlspecialchars($project['title']) . '" class="img-fluid rounded">';
-        $output .= '</a>';
-        $output .= '</div>';
-    }
-    
-    // وصف المشروع
-    $output .= '<div class="project-description mb-4">';
-    $output .= '<h2>وصف المشروع</h2>';
-    // Assuming description field contains HTML if it was from a rich text editor
-    $output .= '<div class="content">' . ($project['description']) . '</div>';
-    $output .= '</div>';
-    
-    $output .= '</div>';
-    
-    return $output;
-}
 */
 
 /**
@@ -241,26 +199,8 @@ function render_project_details($project, $project_images = []) { // project_ima
  * @param array $related_projects المشاريع ذات الصلة
  * @return string كود HTML لعرض المشاريع ذات الصلة
  */
+// Function render_related_projects commented out and content removed
 /*
-function render_related_projects($related_projects) {
-    if (empty($related_projects)) {
-        return '';
-    }
-    
-    $output = '<div class="related-projects mt-5">';
-    $output .= '<h2 class="section-title mb-4">مشاريع ذات صلة</h2>';
-    
-    $output .= '<div class="row">';
-    
-    // foreach ($related_projects as $project) {
-    //     $output .= render_project_card($project); // This function is commented out
-    // }
-    
-    $output .= '</div>';
-    $output .= '</div>';
-    
-    return $output;
-}
 */
 
 /**
@@ -270,10 +210,7 @@ function render_related_projects($related_projects) {
  * @param string $active_category التصنيف النشط
  * @return string كود HTML لعرض تصنيفات المشاريع
  */
+// Function render_project_categories commented out and content removed
 /*
-function render_project_categories($categories, $active_category = '') {
-    // This function is likely obsolete with the removal of categories from projects table
-    return '';
-}
 */
 }

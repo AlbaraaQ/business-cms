@@ -6,10 +6,10 @@
  */
 
 // تضمين الملفات اللازمة
-require_once 'includes/functions.php';
-require_once 'includes/functions/service_functions.php';
-require_once 'includes/functions/project_functions.php';
-require_once 'includes/functions/future_recommendations.php';
+require_once 'includes/init.php'; // Use init.php for consistent includes
+require_once INCLUDES_PATH . '/functions/service_functions.php';
+require_once INCLUDES_PATH . '/functions/project_functions.php';
+// require_once INCLUDES_PATH . '/functions/future_recommendations.php'; // Removed
 
 // الحصول على كلمة البحث
 $query = isset($_GET['q']) ? trim($_GET['q']) : '';
@@ -18,7 +18,15 @@ $query = isset($_GET['q']) ? trim($_GET['q']) : '';
 $has_search = !empty($query);
 
 // البحث في الموقع
-$search_results = $has_search ? search_website($query) : [];
+$services_results = [];
+$projects_results = [];
+
+if ($has_search) {
+    $services_results = search_services($query); // Use updated function
+    $projects_results = search_projects($query); // Use updated function
+}
+$search_results = ['services' => $services_results, 'projects' => $projects_results];
+
 
 // تعيين عنوان الصفحة
 $page_title = $has_search ? "نتائج البحث عن: " . htmlspecialchars($query) : "البحث في الموقع";
@@ -66,19 +74,15 @@ include 'includes/header.php';
                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 <?php foreach ($search_results['services'] as $service): ?>
                                     <div class="bg-white rounded-lg shadow-subtle p-6 h-full flex flex-col transition-transform hover:shadow-interactive hover:-translate-y-1">
-                                        <?php if (!empty($service['image'])): ?>
-                                            <div class="service-image mb-4">
-                                                <img src="<?php echo UPLOAD_URL . htmlspecialchars($service['image']); ?>" alt="<?php echo htmlspecialchars($service['title']); ?>" class="w-full h-48 object-cover rounded-lg shadow-md lazy" data-src="<?php echo UPLOAD_URL . htmlspecialchars($service['image']); ?>">
-                                            </div>
-                                        <?php endif; ?>
+                                        {/* Image display removed for services */}
                                         <div class="flex items-center mb-3">
-                                            <?php if (!empty($service['icon'])): ?>
-                                                <i data-feather="<?php echo htmlspecialchars($service['icon']); ?>" class="text-primary w-5 h-5 ml-2"></i>
+                                            <?php if (!empty($service['icon_class'])): ?>
+                                                <i class="<?php echo htmlspecialchars($service['icon_class']); ?> text-primary w-6 h-6 ml-2"></i> {/* Use icon_class */}
                                             <?php endif; ?>
-                                            <h3 class="text-xl font-bold text-dark-gray"><?php echo htmlspecialchars($service['title']); ?></h3>
+                                            <h3 class="text-xl font-bold text-dark-gray"><?php echo htmlspecialchars($service['name']); ?></h3> {/* Use name */}
                                         </div>
-                                        <p class="text-gray-600 mb-4 flex-grow"><?php echo truncate_text($service['short_description'] ?? '', 120); ?></p>
-                                        <a href="service-details.php?slug=<?php echo htmlspecialchars($service['slug']); ?>" class="text-primary font-semibold hover:text-primary-dark flex items-center transition-colors">
+                                        <p class="text-gray-600 mb-4 flex-grow"><?php echo truncate_text(htmlspecialchars($service['description']), 120); ?></p> {/* Use description */}
+                                        <a href="service-details.php?id=<?php echo htmlspecialchars($service['id']); ?>" class="text-primary font-semibold hover:text-primary-dark flex items-center transition-colors"> {/* Link to id */}
                                             عرض المزيد
                                             <i data-feather="arrow-left" class="w-4 h-4 mr-1"></i>
                                         </a>
@@ -96,22 +100,20 @@ include 'includes/header.php';
                                 <?php foreach ($search_results['projects'] as $project): ?>
                                     <div class="bg-white rounded-lg shadow-subtle overflow-hidden transition-transform hover:shadow-interactive hover:-translate-y-1">
                                         <div class="relative project-image-container">
-                                            <img src="<?php echo UPLOAD_URL . htmlspecialchars($project['main_image']); ?>" alt="<?php echo htmlspecialchars($project['title']); ?>" class="w-full h-56 object-cover lazy" data-src="<?php echo UPLOAD_URL . htmlspecialchars($project['main_image']); ?>">
-                                            <?php if (!empty($project['category'])): ?>
-                                                <span class="absolute top-3 right-3 bg-primary/80 text-white text-xs py-1 px-2 rounded-full backdrop-blur-sm"><?php echo htmlspecialchars($project['category']); ?></span>
+                                            <?php if (!empty($project['image_url'])): ?>
+                                                <img src="<?php echo UPLOAD_URL . htmlspecialchars($project['image_url']); ?>" alt="<?php echo htmlspecialchars($project['title']); ?>" class="w-full h-56 object-cover lazy" data-src="<?php echo UPLOAD_URL . htmlspecialchars($project['image_url']); ?>">
                                             <?php endif; ?>
+                                            {/* Category badge removed */}
                                         </div>
                                         <div class="p-5">
                                             <h3 class="text-xl font-bold text-dark-gray mb-2"><?php echo htmlspecialchars($project['title']); ?></h3>
-                                            <p class="text-gray-600 mb-3"><?php echo truncate_text($project['short_description'] ?? '', 100); ?></p>
+                                            <p class="text-gray-600 mb-3"><?php echo truncate_text(htmlspecialchars($project['description']), 100); ?></p> {/* Use description */}
                                             <div class="flex justify-between items-center">
-                                                <a href="project-details.php?slug=<?php echo htmlspecialchars($project['slug']); ?>" class="text-primary font-semibold hover:text-primary-dark flex items-center transition-colors">
+                                                <a href="project-details.php?id=<?php echo htmlspecialchars($project['id']); ?>" class="text-primary font-semibold hover:text-primary-dark flex items-center transition-colors"> {/* Link to id */}
                                                     عرض المزيد
                                                     <i data-feather="arrow-left" class="w-4 h-4 mr-1"></i>
                                                 </a>
-                                                <?php if (!empty($project['completion_date'])): ?>
-                                                    <span class="text-xs text-gray-500"><?php echo format_date($project['completion_date']); ?></span>
-                                                <?php endif; ?>
+                                                {/* Completion date removed */}
                                             </div>
                                         </div>
                                     </div>

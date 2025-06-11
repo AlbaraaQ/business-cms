@@ -6,47 +6,53 @@
  */
 
 // تضمين الملفات اللازمة
-require_once 'includes/functions.php';
-require_once 'includes/functions/project_functions.php';
-require_once 'includes/functions/service_functions.php';
-require_once 'includes/functions/future_recommendations.php';
+require_once 'includes/init.php'; // init.php should handle including functions.php
+require_once INCLUDES_PATH . '/functions/project_functions.php';
+// service_functions.php and future_recommendations.php likely not needed
+// require_once INCLUDES_PATH . '/functions/service_functions.php';
+// require_once INCLUDES_PATH . '/functions/future_recommendations.php';
+
 
 // الحصول على معرف المشروع من الرابط
-$slug = isset($_GET['slug']) ? $_GET['slug'] : '';
+$project_id = isset($_GET['id']) ? (int)$_GET['id'] : 0; // Expect 'id'
 
 // التحقق من وجود معرف المشروع
-if (empty($slug)) {
-    // إعادة التوجيه إلى الصفحة الرئيسية إذا لم يتم تحديد معرف المشروع
-    header('Location: index.php');
+if ($project_id <= 0) {
+    // إعادة التوجيه إلى الصفحة الرئيسية إذا لم يتم تحديد معرف المشروع صالح
+    redirect(base_url());
     exit;
 }
 
 // الحصول على بيانات المشروع
-$project = get_project_by_slug($slug);
+$project = get_project_by_id($project_id); // Use new function
 
 // التحقق من وجود المشروع
 if (!$project) {
-    // إعادة التوجيه إلى الصفحة الرئيسية إذا لم يتم العثور على المشروع
-    header('Location: index.php');
+    // عرض صفحة 404 إذا لم يتم العثور على المشروع
+    http_response_code(404);
+    redirect(base_url('404.php')); // Or a more specific error page
     exit;
 }
 
-// الحصول على صور المشروع
-$project_images = get_project_images($project['project_id']);
+// $project_images removed (no separate gallery table)
+// $related_projects removed (relied on categories)
 
-// الحصول على المشاريع ذات الصلة
-$related_projects = get_related_projects($project['project_id'], 3);
+// تعيين عنوان الصفحة ووصفها using new SEO function
+$page_name_for_seo = 'project_' . $project['id'];
+$seo_settings = [];
+if (function_exists('get_seo_for_page')) {
+    $seo_settings = get_seo_for_page($page_name_for_seo);
+}
 
-// تعيين عنوان الصفحة ووصفها
-$page_title = !empty($project['meta_title']) ? $project['meta_title'] : $project['title'];
-$page_description = !empty($project['meta_description']) ? $project['meta_description'] : $project['short_description'];
-$page_keywords = !empty($project['keywords']) ? $project['keywords'] : '';
+$page_title = $seo_settings['meta_title'] ?? htmlspecialchars($project['title']);
+$page_description = $seo_settings['meta_description'] ?? truncate_text(strip_tags(htmlspecialchars_decode($project['description'] ?? '')), 155);
+$page_keywords = $seo_settings['meta_keywords'] ?? '';
 
-// تتبع زيارة الصفحة
-track_page_visit('مشروع: ' . $project['title'], 'project-details.php?slug=' . $slug);
+// تتبع زيارة الصفحة - Commented out for now
+// track_page_visit('مشروع: ' . $project['title'], 'project-details.php?id=' . $project_id);
 
 // تضمين رأس الصفحة
-include 'includes/header.php';
+include INCLUDES_PATH . '/header.php';
 ?>
 
 <!-- قسم تفاصيل المشروع -->
@@ -66,31 +72,19 @@ include 'includes/header.php';
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <!-- تفاصيل المشروع -->
             <div class="lg:col-span-2">
-                <!-- الصورة الرئيسية -->
-                <?php if (!empty($project['main_image'])): ?>
+                <!-- الصورة الرئيسية (image_url) -->
+                <?php if (!empty($project['image_url'])): ?>
                 <div class="mb-8 rounded-lg overflow-hidden shadow-md">
-                    <img src="<?php echo UPLOAD_URL . htmlspecialchars($project['main_image']); ?>" alt="<?php echo htmlspecialchars($project['title']); ?>" class="w-full h-auto">
+                    <img src="<?php echo UPLOAD_URL . htmlspecialchars($project['image_url']); ?>" alt="<?php echo htmlspecialchars($project['title']); ?>" class="w-full h-auto">
                 </div>
                 <?php endif; ?>
 
                 <!-- الوصف التفصيلي -->
                 <div class="prose max-w-none mb-8">
-                    <?php echo $project['full_description']; ?>
+                    <?php echo nl2br(htmlspecialchars_decode($project['description'])); ?> {/* Use description */}
                 </div>
 
-                <!-- معرض الصور -->
-                <?php if (!empty($project_images)): ?>
-                <div class="mb-8">
-                    <h3 class="text-xl font-bold text-dark-gray mb-4">معرض الصور</h3>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                        <?php foreach ($project_images as $image): ?>
-                        <a href="<?php echo UPLOAD_URL . htmlspecialchars($image['image_path']); ?>" data-fancybox="project-gallery" class="block rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
-                            <img src="<?php echo UPLOAD_URL . htmlspecialchars($image['image_path']); ?>" alt="<?php echo htmlspecialchars($project['title']); ?>" class="w-full h-40 object-cover lazy" data-src="<?php echo UPLOAD_URL . htmlspecialchars($image['image_path']); ?>">
-                        </a>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-                <?php endif; ?>
+                {/* Image gallery removed */}
 
                 <!-- زر استفسار عن مشروع مماثل -->
                 <div class="mt-8">
@@ -108,71 +102,31 @@ include 'includes/header.php';
                     <div class="mb-8">
                         <h3 class="text-xl font-bold text-dark-gray mb-4">معلومات المشروع</h3>
                         <ul class="space-y-3">
-                            <?php if (!empty($project['category'])): ?>
+                            {/* Category, Client, Location, Completion Date removed */}
+                            <?php if (!empty($project['project_url'])): ?>
                             <li class="flex items-start">
-                                <i data-feather="tag" class="w-5 h-5 text-primary ml-2 mt-0.5"></i>
+                                <i data-feather="link" class="w-5 h-5 text-primary ml-2 mt-0.5"></i>
                                 <div>
-                                    <span class="font-semibold">التصنيف:</span>
-                                    <span><?php echo htmlspecialchars($project['category']); ?></span>
+                                    <span class="font-semibold">رابط المشروع:</span>
+                                    <a href="<?php echo htmlspecialchars($project['project_url']); ?>" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline break-all"><?php echo htmlspecialchars($project['project_url']); ?></a>
                                 </div>
                             </li>
                             <?php endif; ?>
-                            
-                            <?php if (!empty($project['client_name'])): ?>
-                            <li class="flex items-start">
-                                <i data-feather="user" class="w-5 h-5 text-primary ml-2 mt-0.5"></i>
-                                <div>
-                                    <span class="font-semibold">العميل:</span>
-                                    <span><?php echo htmlspecialchars($project['client_name']); ?></span>
-                                </div>
-                            </li>
-                            <?php endif; ?>
-                            
-                            <?php if (!empty($project['location'])): ?>
-                            <li class="flex items-start">
-                                <i data-feather="map-pin" class="w-5 h-5 text-primary ml-2 mt-0.5"></i>
-                                <div>
-                                    <span class="font-semibold">الموقع:</span>
-                                    <span><?php echo htmlspecialchars($project['location']); ?></span>
-                                </div>
-                            </li>
-                            <?php endif; ?>
-                            
-                            <?php if (!empty($project['completion_date'])): ?>
-                            <li class="flex items-start">
+                             <li class="flex items-start">
                                 <i data-feather="calendar" class="w-5 h-5 text-primary ml-2 mt-0.5"></i>
                                 <div>
-                                    <span class="font-semibold">تاريخ الإنجاز:</span>
-                                    <span><?php echo format_date($project['completion_date']); ?></span>
+                                    <span class="font-semibold">تاريخ الإضافة:</span>
+                                    <span><?php echo format_date($project['created_at']); ?></span>
                                 </div>
                             </li>
-                            <?php endif; ?>
                         </ul>
                     </div>
 
-                    <!-- المشاريع ذات الصلة -->
-                    <?php if (!empty($related_projects)): ?>
-                    <div>
-                        <h3 class="text-xl font-bold text-dark-gray mb-4">مشاريع ذات صلة</h3>
-                        <ul class="space-y-4">
-                            <?php foreach ($related_projects as $related): ?>
-                            <li>
-                                <a href="project-details.php?slug=<?php echo htmlspecialchars($related['slug']); ?>" class="flex items-center group">
-                                    <?php if (!empty($related['main_image'])): ?>
-                                    <div class="w-16 h-16 rounded-md overflow-hidden ml-3 shadow-sm">
-                                        <img src="<?php echo UPLOAD_URL . htmlspecialchars($related['main_image']); ?>" alt="<?php echo htmlspecialchars($related['title']); ?>" class="w-full h-full object-cover lazy" data-src="<?php echo UPLOAD_URL . htmlspecialchars($related['main_image']); ?>">
-                                    </div>
-                                    <?php endif; ?>
-                                    <div>
-                                        <h4 class="font-semibold text-dark-gray group-hover:text-primary transition-colors"><?php echo htmlspecialchars($related['title']); ?></h4>
-                                        <p class="text-sm text-gray-500"><?php echo truncate_text($related['short_description'], 60); ?></p>
-                                    </div>
-                                </a>
-                            </li>
-                            <?php endforeach; ?>
-                        </ul>
+                    {/* Related Projects section removed */}
+                     <div>
+                        <h3 class="text-xl font-bold text-dark-gray mb-4">مشاريع أخرى</h3>
+                        <p class="text-gray-600">يمكنك تصفح <a href="<?php echo base_url('projects.php'); ?>" class="text-primary hover:underline">جميع مشاريعنا</a>.</p>
                     </div>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>
