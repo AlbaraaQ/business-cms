@@ -1,0 +1,919 @@
+<?php
+/**
+ * صفحة التثبيت - حداد جده
+ * واجهة رسومية لتثبيت النظام وإعداد قاعدة البيانات
+ */
+
+// Configuration
+$config_file_path = __DIR__ . '/../config/config.php';
+$install_script_name = basename(__FILE__);
+$logs_dir = dirname(__DIR__) . '/logs/';
+
+// Initialize variables
+$errors = [];
+$success_messages = [];
+$form_data = $_POST;
+
+// Ensure logs directory exists and is writable
+if (!is_dir($logs_dir)) {
+    if (!@mkdir($logs_dir, 0755, true)) {
+        die("فشل في إنشاء مجلد السجلات");
+    }
+}
+
+// Prevent access if already installed
+if (file_exists($config_file_path)) {
+    header('Location: ../admin/');
+    exit;
+}
+
+// Include required files
+require_once __DIR__ . '/../core/Database.php';
+require_once __DIR__ . '/../includes/functions.php';
+
+// Process form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $step = isset($_GET['step']) ? (int)$_GET['step'] : 1;
+
+    if ($step == 1) {
+        // Server-side validation
+        $required_fields = [
+            'db_host', 'db_name', 'db_user',
+            'site_name', 'admin_username',
+            'admin_password', 'admin_password_confirm'
+        ];
+
+        foreach ($required_fields as $field) {
+            if (empty($form_data[$field])) {
+                $errors[] = "الحقل '" . htmlspecialchars(str_replace('_', ' ', $field)) . "' مطلوب.";
+            } else {
+                $form_data[$field] = sanitize_input($form_data[$field]);
+            }
+        }
+
+        // Validate passwords
+        if (!empty($form_data['admin_password']) && $form_data['admin_password'] !== $form_data['admin_password_confirm']) {
+            $errors[] = "كلمتا المرور للمدير غير متطابقتين.";
+        }
+
+        if (!empty($form_data['admin_password']) && strlen($form_data['admin_password']) < 8) {
+            $errors[] = "كلمة مرور المدير يجب أن تكون 8 أحرف على الأقل.";
+        }
+
+        // Proceed if no errors
+        if (empty($errors)) {
+            try {
+                // 1. Create database
+                Database::createDatabase(
+                    $form_data['db_host'],
+                    $form_data['db_user'],
+                    $form_data['db_pass'],
+                    $form_data['db_name']
+                );
+                $success_messages[] = "تم إنشاء قاعدة البيانات '{$form_data['db_name']}' بنجاح.";
+
+                // 2. Connect to database
+                $dsn = "mysql:host={$form_data['db_host']};dbname={$form_data['db_name']};charset=utf8mb4";
+                $options = [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
+                ];
+                $pdo = new PDO($dsn, $form_data['db_user'], $form_data['db_pass'], $options);
+                $success_messages[] = "تم الاتصال بقاعدة البيانات بنجاح.";
+
+                // 3. Create tables
+                createDatabaseTables($pdo, $form_data);
+                $success_messages[] = "تم إنشاء جداول قاعدة البيانات بنجاح.";
+
+                // 4. Create admin user
+                createAdminUser($pdo, $form_data);
+                $success_messages[] = "تم إنشاء حساب المدير بنجاح.";
+
+                // 5. Insert settings
+                insertInitialSettings($pdo, $form_data);
+                $success_messages[] = "تم حفظ إعدادات الموقع.";
+
+                // 6. Create config file
+                $config_content = generateConfigFileContent($form_data);
+
+                // Ensure config directory exists
+                $config_dir = dirname($config_file_path);
+                if (!is_dir($config_dir)) {
+                    if (!@mkdir($config_dir, 0755, true)) {
+                        throw new Exception("فشل في إنشاء مجلد الإعدادات");
+                    }
+                }
+
+                if (file_put_contents($config_file_path, $config_content) === false) {
+                    throw new Exception("فشل في كتابة ملف الإعداد");
+                }
+                $success_messages[] = "تم إنشاء ملف الإعداد بنجاح.";
+
+                // 7. Secure installation file
+                secureInstallationFile($install_script_name);
+
+            } catch (PDOException $e) {
+                $errors[] = "خطأ في قاعدة البيانات: " . htmlspecialchars($e->getMessage());
+                cleanupOnError($config_file_path);
+            } catch (Exception $e) {
+                $errors[] = "خطأ أثناء التثبيت: " . htmlspecialchars($e->getMessage());
+                cleanupOnError($config_file_path);
+            }
+        }
+    }
+}
+
+/**
+ * Generate config file content
+ */
+function generateConfigFileContent($data) {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+              (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443) ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $script_path = dirname(dirname($_SERVER['SCRIPT_NAME']));
+    $site_url = rtrim($scheme . '://' . $host . $script_path, '/');
+
+    $config = "<?php\n";
+    $config .= "/**\n * ملف الإعداد - تم إنشاؤه تلقائياً\n * تاريخ الإنشاء: " . date('Y-m-d H:i:s') . "\n */\n\n";
+    $config .= "// إعدادات قاعدة البيانات\n";
+    $config .= "define('DB_HOST', '" . addslashes($data['db_host']) . "');\n";
+    $config .= "define('DB_NAME', '" . addslashes($data['db_name']) . "');\n";
+    $config .= "define('DB_USER', '" . addslashes($data['db_user']) . "');\n";
+    $config .= "define('DB_PASS', '" . addslashes($data['db_pass']) . "');\n";
+    $config .= "define('DB_CHARSET', 'utf8mb4');\n\n";
+    $config .= "// إعدادات الموقع\n";
+    $config .= "define('SITE_URL', '" . addslashes($site_url) . "');\n";
+    $config .= "define('SITE_NAME', '" . addslashes($data['site_name']) . "');\n";
+    $config .= "define('SITE_TAGLINE', '" . addslashes($data['site_tagline'] ?? '') . "');\n\n";
+    $config .= "// مسارات الملفات\n";
+    $config .= "define('PROJECT_ROOT', dirname(__DIR__));\n";
+    $config .= "define('UPLOADS_DIR_NAME', 'uploads');\n";
+    $config .= "define('UPLOAD_PATH', PROJECT_ROOT . '/' . UPLOADS_DIR_NAME . '/');\n";
+    $config .= "define('UPLOAD_URL', SITE_URL . '/' . UPLOADS_DIR_NAME . '/');\n\n";
+    $config .= "// إعدادات الأمان\n";
+    $config .= "define('ADMIN_SESSION_NAME', 'admin_session');\n";
+    $config .= "define('CSRF_TOKEN_NAME', 'csrf_token');\n";
+    $config .= "define('ADMIN_PANEL_LOCKED', false);\n\n";
+    $config .= "// إعدادات أخرى\n";
+    $config .= "define('TIMEZONE', 'Asia/Riyadh');\n";
+    $config .= "define('DEBUG_MODE', " . ($data['debug_mode'] ?? 'false') . ");\n\n";
+    $config .= "// تعيين المنطقة الزمنية\n";
+    $config .= "date_default_timezone_set(TIMEZONE);\n\n";
+    $config .= "// بدء الجلسة إذا لم تكن مبدوءة (مهم للوحة التحكم)\n";
+    $config .= "if (session_status() === PHP_SESSION_NONE) {\n";
+    $config .= "    if (defined('ADMIN_SESSION_NAME')) {\n";
+    $config .= "        session_name(ADMIN_SESSION_NAME);\n";
+    $config .= "    }\n";
+    $config .= "    session_start();\n";
+    $config .= "}\n\n";
+    $config .= "// تعيين الترميز\n";
+    $config .= "mb_internal_encoding('UTF-8');\n";
+    $config .= "mb_http_output('UTF-8');\n\n";
+    $config .= "// إنشاء مجلد الرفع إذا لم يكن موجوداً\n";
+    $config .= "if (!is_dir(UPLOAD_PATH)) {\n";
+    $config .= "    @mkdir(UPLOAD_PATH, 0755, true);\n";
+    $config .= "}\n\n";
+    $config .= "// Display errors if DEBUG_MODE is true\n";
+    $config .= "if (defined('DEBUG_MODE') && DEBUG_MODE) {\n";
+    $config .= "    ini_set('display_errors', 1);\n";
+    $config .= "    ini_set('display_startup_errors', 1);\n";
+    $config .= "    error_reporting(E_ALL);\n";
+    $config .= "} else {\n";
+    $config .= "    ini_set('display_errors', 0);\n";
+    $config .= "    ini_set('display_startup_errors', 0);\n";
+    $config .= "    error_reporting(0);\n";
+    $config .= "}\n";
+    $config .= "?>";
+
+    return $config;
+}
+
+/**
+ * Secure installation file after successful installation
+ */
+function secureInstallationFile($filename) {
+    $current_file = __FILE__;
+    $new_name = $current_file . '.installed';
+
+    if (@rename($current_file, $new_name)) {
+        return true;
+    } elseif (@unlink($current_file)) {
+        return true;
+    } else {
+        throw new Exception("فشل في تأمين ملف التثبيت. يرجى حذفه يدوياً.");
+    }
+}
+
+/**
+ * Cleanup on error
+ */
+function cleanupOnError($config_path) {
+    if (file_exists($config_path)) {
+        @unlink($config_path);
+    }
+}
+
+/**
+ * Creates database tables using DDL from additional_context.\n * Requires a valid PDO connection to the target database.\n */
+/**
+ * إنشاء جداول قاعدة البيانات
+ */
+function createDatabaseTables($pdo, $formData) {
+    $sql = "
+    SET NAMES utf8mb4;
+    SET CHARACTER SET utf8mb4;
+    SET collation_connection = 'utf8mb4_unicode_ci';
+
+    -- حذف الجداول إذا كانت موجودة (لإعادة الإنشاء أثناء التطوير أو التثبيت)
+    DROP TABLE IF EXISTS `facts`;
+    DROP TABLE IF EXISTS `project_images`;
+    DROP TABLE IF EXISTS `testimonials`;
+    DROP TABLE IF EXISTS `projects`;
+    DROP TABLE IF EXISTS `services`;
+    DROP TABLE IF EXISTS `homepage_sections`;
+    DROP TABLE IF EXISTS `settings`;
+    DROP TABLE IF EXISTS `users`;
+
+    -- جدول `users` لتخزين بيانات مدراء لوحة التحكم
+    CREATE TABLE `users` (
+      `user_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+      `username` VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL UNIQUE,
+      `password_hash` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+      `role` VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'admin',
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`user_id`),
+      INDEX `idx_username` (`username`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول مستخدمي لوحة التحكم';
+
+    -- جدول `settings` لتخزين الإعدادات العامة للموقع
+    CREATE TABLE `settings` (
+      `setting_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+      `site_name` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `site_tagline` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `site_description` TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `contact_phone` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `contact_email` VARCHAR(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `contact_address` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `whatsapp_link` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `instagram_link` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `twitter_link` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `facebook_link` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `footer_text` TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `map_location_name` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `map_lat` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `map_lng` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `map_api_key` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `site_logo_path` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `site_favicon_path` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `enabled_frontend_sections` JSON DEFAULT NULL COMMENT 'JSON object for toggling main frontend sections visibility',
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`setting_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول الإعدادات العامة للموقع';
+
+    -- جدول `homepage_sections` لتخزين أقسام الصفحة الرئيسية الديناميكية
+    CREATE TABLE `homepage_sections` (
+      `section_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+      `section_type` VARCHAR(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+      `section_order` INT(11) UNSIGNED NOT NULL,
+      `is_visible` BOOLEAN NOT NULL DEFAULT TRUE,
+      `title` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `subtitle` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `background_image` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `content` LONGTEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `data_attributes` JSON DEFAULT NULL,
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`section_id`),
+      UNIQUE INDEX `idx_section_order_unique` (`section_order`),
+      INDEX `idx_section_type` (`section_type`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول أقسام الصفحة الرئيسية الديناميكية';
+
+    -- جدول `services` لتخزين معلومات الخدمات المقدمة
+    CREATE TABLE `services` (
+      `service_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+      `title` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+      `slug` VARCHAR(255) COLLATE utf8mb4_unicode_ci UNIQUE,
+      `short_description` TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `full_description` LONGTEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `image` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `icon` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+      `order` INT(11) UNSIGNED NOT NULL DEFAULT 0,
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`service_id`),
+      INDEX `idx_order` (`order`),
+      INDEX `idx_slug` (`slug`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول الخدمات';
+
+    -- جدول `projects` لتخزين معلومات المشاريع المكتملة
+    CREATE TABLE `projects` (
+      `project_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+      `title` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+      `slug` VARCHAR(255) COLLATE utf8mb4_unicode_ci UNIQUE,
+      `short_description` TEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `full_description` LONGTEXT COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `main_image` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `category` VARCHAR(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `completion_date` DATE DEFAULT NULL,
+      `client_name` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `location` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+      `order` INT(11) UNSIGNED NOT NULL DEFAULT 0,
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`project_id`),
+      INDEX `idx_category` (`category`),
+      INDEX `idx_order` (`order`),
+      INDEX `idx_slug` (`slug`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول المشاريع';
+
+    -- جدول `project_images` لتخزين الصور الإضافية لكل مشروع
+    CREATE TABLE `project_images` (
+      `image_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+      `project_id` INT(11) UNSIGNED NOT NULL,
+      `image_path` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+      `caption` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `order` INT(11) UNSIGNED NOT NULL DEFAULT 0,
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (`image_id`),
+      FOREIGN KEY (`project_id`) REFERENCES `projects`(`project_id`) ON DELETE CASCADE,
+      INDEX `idx_project_order` (`project_id`, `order`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول صور المشاريع الإضافية';
+
+    -- جدول `testimonials` لتخزين آراء العملاء
+    CREATE TABLE `testimonials` (
+      `testimonial_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+      `client_name` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+      `client_title_company` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `feedback` TEXT COLLATE utf8mb4_unicode_ci NOT NULL,
+      `client_photo` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `rating` INT(11) UNSIGNED DEFAULT NULL CHECK (`rating` IS NULL OR (`rating` >= 1 AND `rating` <= 5)),
+      `is_approved` BOOLEAN NOT NULL DEFAULT FALSE,
+      `order` INT(11) UNSIGNED NOT NULL DEFAULT 0,
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`testimonial_id`),
+      INDEX `idx_order` (`order`),
+      INDEX `idx_is_approved` (`is_approved`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول آراء العملاء';
+
+    -- جدول `facts` لتخزين بيانات قسم الحقائق (عداد الأرقام)
+    CREATE TABLE `facts` (
+      `fact_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+      `homepage_section_id` INT(11) UNSIGNED DEFAULT NULL,
+      `icon` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `number` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `title` VARCHAR(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+      `prefix` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `suffix` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+      `order` INT(11) UNSIGNED NOT NULL DEFAULT 0,
+      `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`fact_id`),
+      FOREIGN KEY (`homepage_section_id`) REFERENCES `homepage_sections`(`section_id`) ON DELETE SET NULL,
+      INDEX `idx_order` (`order`),
+      INDEX `fk_homepage_section_id` (`homepage_section_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول بيانات قسم الحقائق';
+    ";
+
+    $statements = explode(';', $sql);
+    foreach ($statements as $statement) {
+        $statement = trim($statement);
+        if (!empty($statement)) {
+            $pdo->exec($statement);
+        }
+    }
+
+    // إضافة بيانات أولية
+    addInitialData($pdo, $formData);
+}
+
+/**
+ * إضافة بيانات أولية للجداول
+ */
+function addInitialData($pdo) {
+    // إضافة إعدادات الموقع
+    $stmt = $pdo->query("SELECT COUNT(*) FROM `settings`");
+    if ($stmt->fetchColumn() == 0) {
+        $sql = "INSERT INTO `settings`
+                (site_name, site_tagline, site_description, footer_text)
+                VALUES (?, ?, ?, ?)";
+        $pdo->prepare($sql)->execute([
+            'موقع حداد جده',
+            'خدمات احترافية في الأعمال المعدنية',
+            'نقدم خدمات حدادة وكلادنج بجودة عالية في جده',
+            'جميع الحقوق محفوظة © ' . date('Y')
+        ]);
+    }
+
+    // إضافة خدمات أولية
+    $stmt = $pdo->query("SELECT COUNT(*) FROM `services`");
+    if ($stmt->fetchColumn() == 0) {
+        $services = [
+            [
+                'title' => 'تصنيع الأبواب المعدنية',
+                'slug' => 'metal-doors',
+                'short_description' => 'أبواب حديد عالية الجودة بتصاميم مميزة',
+                'order' => 1
+            ],
+            [
+                'title' => 'أعمال الدرابزين',
+                'slug' => 'railings',
+                'short_description' => 'درابزين حديد مشغول بجودة فائقة',
+                'order' => 2
+            ]
+        ];
+
+        $sql = "INSERT INTO `services`
+                (title, slug, short_description, `order`)
+                VALUES (?, ?, ?, ?)";
+
+        foreach ($services as $service) {
+            $pdo->prepare($sql)->execute([
+                $service['title'],
+                $service['slug'],
+                $service['short_description'],
+                $service['order']
+            ]);
+        }
+    }
+}
+
+/**
+ * Inserts initial site settings into the database.\n */
+/**
+ * إضافة الإعدادات الأولية للموقع
+ */
+function insertInitialSettings($pdo, $formData) {
+    $stmt = $pdo->query("SELECT COUNT(*) FROM `settings`");
+    if ($stmt->fetchColumn() == 0) {
+        $sql = "INSERT INTO `settings`
+                (site_name, site_tagline, site_description, contact_phone, contact_email, footer_text)
+                VALUES (:site_name, :site_tagline, :site_description, :contact_phone, :contact_email, :footer_text)";
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([
+            ':site_name' => $formData['site_name'] ?? 'حداد جده',
+            ':site_tagline' => $formData['site_tagline'] ?? 'خدمات احترافية في الأعمال المعدنية',
+            ':site_description' => $formData['site_description'] ?? 'نقدم خدمات حدادة وكلادنج بجودة عالية في جده',
+            ':contact_phone' => $formData['contact_phone'] ?? '0500000000',
+            ':contact_email' => $formData['contact_email'] ?? 'info@example.com',
+            ':footer_text' => '© ' . date('Y') . ' ' . ($formData['site_name'] ?? 'حداد جده')
+        ]);
+    }
+}
+
+
+/**
+ * Creates the initial admin user.\n */
+/**
+ * إنشاء مستخدم المدير
+ */
+function createAdminUser($pdo, $data) {
+    // التحقق من عدم وجود مستخدم بنفس الاسم
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM `users` WHERE `username` = ?");
+    $stmt->execute([$data['admin_username']]);
+
+    if ($stmt->fetchColumn() > 0) {
+        throw new Exception("اسم المستخدم موجود بالفعل!");
+    }
+
+    // تشفير كلمة المرور
+    $password_hash = password_hash($data['admin_password'], PASSWORD_DEFAULT);
+
+    // إضافة المستخدم
+    $sql = "INSERT INTO `users`
+            (username, password_hash, role)
+            VALUES (?, ?, 'admin')";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        $data['admin_username'],
+        $password_hash
+    ]);
+
+    // إضافة صلاحيات إضافية إذا لزم الأمر
+    // يمكنك إضافة المزيد من الخطوات هنا إذا كان لديك نظام صلاحيات متقدم
+}
+
+?>
+
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تثبيت النظام - حداد جده</title>
+
+    <!-- تحسينات الأداء والأمان -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- تحسين Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+
+    <style>
+        :root {
+            --primary: #fb2056;
+            --primary-dark: #da1c4b;
+        }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 0.25rem;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            transition: all 0.2s ease;
+        }
+
+        .form-input:focus {
+            border-color: #fda4af;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(251, 32, 86, 0.1);
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+            padding: 0.625rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border: 1px solid transparent;
+            border-radius: 0.375rem;
+        }
+
+        .alert-danger {
+            background-color: #fef2f2;
+            border-color: #fecaca;
+            color: #b91c1c;
+        }
+
+        .alert-success {
+            background-color: #f0fdf4;
+            border-color: #bbf7d0;
+            color: #166534;
+        }
+
+        .alert-info {
+            background-color: #eff6ff;
+            border-color: #bfdbfe;
+            color: #1e40af;
+        }
+
+        /* تحسينات للهواتف */
+        @media (max-width: 640px) {
+            .container {
+                padding: 0.5rem;
+            }
+
+            .form-input {
+                padding: 0.5rem;
+            }
+        }
+
+        /* تأثيرات للتفاعل */
+        .transition-all {
+            transition: all 0.2s ease;
+        }
+
+        /* شريط التمرير */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #fda4af;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #f472b6;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="container mx-auto max-w-2xl">
+        <div class="bg-white shadow-xl rounded-xl overflow-hidden">
+            <!-- Header Section -->
+            <div class="bg-gradient-to-r from-pink-600 to-pink-700 p-6 text-center text-white">
+                <div class="w-20 h-20 bg-white/10 rounded-full mx-auto mb-4 flex items-center justify-center backdrop-blur-sm shadow-lg">
+                    <svg class="w-10 h-10" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 3.75H6.912a2.25 2.25 0 00-2.15 1.588L2.35 13.177a2.25 2.25 0 00-.1.661V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 00-2.15-1.588H15M2.25 13.5h3.86a2.25 2.25 0 012.012 1.244l.256.512a2.25 2.25 0 002.013 1.244h3.218a2.25 2.25 0 002.013-1.244l.256-.512a2.25 2.25 0 012.013-1.244h3.859M12 3v8.25m0 0l-3-3m3 3l3-3" />
+                    </svg>
+                </div>
+                <h1 class="text-2xl sm:text-3xl font-bold">معالج تثبيت النظام</h1>
+                <p class="text-pink-100 mt-1 text-sm sm:text-base">حداد جده - نظام إدارة المحتوى</p>
+            </div>
+
+            <div class="p-6 sm:p-8">
+                <?php if (!empty($success_messages) && empty($errors)): ?>
+                    <!-- Success Message -->
+                    <div class="alert alert-success mb-6">
+                        <div class="flex items-start">
+                            <svg class="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd" />
+                            </svg>
+                            <div>
+                                <h3 class="text-lg font-semibold mb-2">تم التثبيت بنجاح!</h3>
+                                <ul class="list-disc list-inside space-y-1">
+                                    <?php foreach ($success_messages as $msg): ?>
+                                        <li><?php echo htmlspecialchars($msg); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="mt-6 space-y-3 sm:space-y-0 sm:flex sm:space-x-3 sm:space-x-reverse">
+                            <a href="<?php echo rtrim(dirname(dirname($_SERVER['REQUEST_URI'])), '/\\\\') . '/admin/'; ?>" class="btn-primary sm:w-auto flex items-center justify-center">
+                                <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                                </svg>
+                                الذهاب إلى لوحة التحكم
+                            </a>
+                            <a href="<?php echo rtrim(dirname(dirname($_SERVER['REQUEST_URI'])), '/\\\\') . '/'; ?>" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2.5 rounded-lg font-semibold transition-all w-full sm:w-auto flex items-center justify-center">
+                                <svg class="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                عرض الموقع
+                            </a>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <!-- Error Messages -->
+                    <?php if (!empty($errors)): ?>
+                        <div class="alert alert-danger mb-6">
+                            <div class="flex items-start">
+                                <svg class="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                                </svg>
+                                <div>
+                                    <h3 class="text-lg font-semibold mb-2">حدث خطأ!</h3>
+                                    <ul class="list-disc list-inside">
+                                        <?php foreach ($errors as $error): ?>
+                                            <li><?php echo $error; ?></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <!-- Partial Success Messages -->
+                    <?php if (!empty($success_messages) && !empty($errors)): ?>
+                        <div class="alert alert-info mb-6">
+                            <div class="flex items-start">
+                                <svg class="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clip-rule="evenodd" />
+                                </svg>
+                                <div>
+                                    <h3 class="text-lg font-semibold mb-2">ملاحظات العملية:</h3>
+                                    <ul class="list-disc list-inside">
+                                        <?php foreach ($success_messages as $msg): ?>
+                                            <li><?php echo htmlspecialchars($msg); ?></li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <!-- Installation Form -->
+                    <form method="post" action="<?php echo htmlspecialchars($install_script_name); ?>?step=1" class="space-y-6" id="installForm">
+                        <!-- Database Settings -->
+                        <div class="border-b border-gray-200 pb-6">
+                            <h2 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-pink-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+                                </svg>
+                                إعدادات قاعدة البيانات
+                            </h2>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="db_host" class="form-label">مضيف قاعدة البيانات <span class="text-red-500">*</span></label>
+                                    <input type="text" id="db_host" name="db_host" value="<?php echo htmlspecialchars($form_data['db_host'] ?? 'localhost'); ?>" required class="form-input" placeholder="مثال: localhost">
+                                </div>
+                                <div>
+                                    <label for="db_name" class="form-label">اسم قاعدة البيانات <span class="text-red-500">*</span></label>
+                                    <input type="text" id="db_name" name="db_name" value="<?php echo htmlspecialchars($form_data['db_name'] ?? ''); ?>" required class="form-input" placeholder="اسم قاعدة البيانات">
+                                </div>
+                                <div>
+                                    <label for="db_user" class="form-label">اسم المستخدم <span class="text-red-500">*</span></label>
+                                    <input type="text" id="db_user" name="db_user" value="<?php echo htmlspecialchars($form_data['db_user'] ?? ''); ?>" required class="form-input" placeholder="اسم مستخدم قاعدة البيانات">
+                                </div>
+                                <div>
+                                    <label for="db_pass" class="form-label">كلمة المرور</label>
+                                    <input type="password" id="db_pass" name="db_pass" value="<?php echo htmlspecialchars($form_data['db_pass'] ?? ''); ?>" class="form-input" placeholder="كلمة مرور قاعدة البيانات">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Site Information -->
+                        <div class="border-b border-gray-200 pb-6">
+                            <h2 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-pink-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418" />
+                                </svg>
+                                معلومات الموقع
+                            </h2>
+                            <div class="space-y-4">
+                                <div>
+                                    <label for="site_name" class="form-label">اسم الموقع <span class="text-red-500">*</span></label>
+                                    <input type="text" id="site_name" name="site_name" value="<?php echo htmlspecialchars($form_data['site_name'] ?? 'حداد جده'); ?>" required class="form-input" placeholder="اسم موقعك">
+                                </div>
+                                <div>
+                                    <label for="site_tagline" class="form-label">شعار الموقع</label>
+                                    <input type="text" id="site_tagline" name="site_tagline" value="<?php echo htmlspecialchars($form_data['site_tagline'] ?? 'أعمال حدادة وتركيب كلادنج احترافية'); ?>" class="form-input" placeholder="وصف قصير للموقع">
+                                </div>
+                                <div>
+                                    <label for="site_description" class="form-label">وصف الموقع</label>
+                                    <textarea id="site_description" name="site_description" rows="3" class="form-input" placeholder="وصف مفصل للموقع (لأغراض SEO)"><?php echo htmlspecialchars($form_data['site_description'] ?? 'نقدم أفضل خدمات الحدادة والكلادنج في جده، جودة عالية وأسعار تنافسية.'); ?></textarea>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Admin Account -->
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                                <svg class="w-5 h-5 mr-2 text-pink-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                                </svg>
+                                حساب المدير
+                            </h2>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="admin_username" class="form-label">اسم المستخدم <span class="text-red-500">*</span></label>
+                                    <input type="text" id="admin_username" name="admin_username" value="<?php echo htmlspecialchars($form_data['admin_username'] ?? 'admin'); ?>" required class="form-input" pattern="^[a-zA-Z0-9_]{3,20}$" title="3-20 حرف إنجليزي أو رقم أو _" placeholder="اسم مستخدم المدير">
+                                </div>
+                                <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label for="admin_password" class="form-label">كلمة المرور <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <input type="password" id="admin_password" name="admin_password" required minlength="8" class="form-input pr-10" placeholder="كلمة مرور قوية">
+                                            <button type="button" class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none" onclick="togglePassword('admin_password')">
+                                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                        <p class="text-xs text-gray-500 mt-1">8 أحرف على الأقل</p>
+                                    </div>
+                                    <div>
+                                        <label for="admin_password_confirm" class="form-label">تأكيد كلمة المرور <span class="text-red-500">*</span></label>
+                                        <div class="relative">
+                                            <input type="password" id="admin_password_confirm" name="admin_password_confirm" required minlength="8" class="form-input pr-10" placeholder="تأكيد كلمة المرور">
+                                            <button type="button" class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none" onclick="togglePassword('admin_password_confirm')">
+                                                <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="pt-2">
+                            <button type="submit" id="submitBtn" class="btn-primary flex items-center justify-center">
+                                <svg id="loadingSpinner" class="animate-spin -ml-1 mr-2 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span id="submitBtnText">بدء التثبيت</span>
+                            </button>
+                        </div>
+                    </form>
+                <?php endif; ?>
+            </div>
+
+            <!-- Footer -->
+            <div class="bg-gray-50 px-6 py-4 border-t border-gray-200">
+                <div class="text-center text-xs text-gray-500">
+                    <p>نظام إدارة المحتوى - حداد جده</p>
+                    <p>الإصدار 1.0.0 | PHP <?php echo PHP_VERSION; ?></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // تحسينات JavaScript
+        document.addEventListener('DOMContentLoaded', function() {
+            const installForm = document.getElementById('installForm');
+            if (installForm) {
+                const password = document.getElementById('admin_password');
+                const confirmPassword = document.getElementById('admin_password_confirm');
+                const submitBtn = document.getElementById('submitBtn');
+                const loadingSpinner = document.getElementById('loadingSpinner');
+                const submitBtnText = document.getElementById('submitBtnText');
+
+                // التحقق من تطابق كلمات المرور
+                function validatePasswords() {
+                    if (password.value !== confirmPassword.value && confirmPassword.value.length > 0) {
+                        confirmPassword.setCustomValidity('كلمتا المرور غير متطابقتين');
+                        confirmPassword.classList.add('border-red-500');
+                        confirmPassword.classList.remove('border-green-500');
+                    } else {
+                        confirmPassword.setCustomValidity('');
+                        confirmPassword.classList.remove('border-red-500');
+                        if (confirmPassword.value.length > 0) {
+                            confirmPassword.classList.add('border-green-500');
+                        } else {
+                            confirmPassword.classList.remove('border-green-500');
+                        }
+                    }
+                }
+
+                // التحقق من طول كلمة المرور
+                function validatePasswordLength() {
+                    if (password.value.length > 0 && password.value.length < 8) {
+                        password.setCustomValidity('كلمة المرور يجب أن تكون 8 أحرف على الأقل');
+                        password.classList.add('border-red-500');
+                        password.classList.remove('border-green-500');
+                    } else {
+                        password.setCustomValidity('');
+                        password.classList.remove('border-red-500');
+                        if (password.value.length >= 8) {
+                            password.classList.add('border-green-500');
+                        } else {
+                            password.classList.remove('border-green-500');
+                        }
+                    }
+                }
+
+                // إضافة مستمعات الأحداث
+                if (password && confirmPassword) {
+                    password.addEventListener('input', function() {
+                        validatePasswordLength();
+                        validatePasswords();
+                    });
+
+                    confirmPassword.addEventListener('input', validatePasswords);
+                }
+
+                // إدارة حالة التحميل عند الإرسال
+                installForm.addEventListener('submit', function() {
+                    if (submitBtn && loadingSpinner && submitBtnText) {
+                        submitBtn.disabled = true;
+                        loadingSpinner.classList.remove('hidden');
+                        submitBtnText.textContent = 'جاري التثبيت...';
+                    }
+                });
+            }
+        });
+
+        // تبديل عرض كلمة المرور
+        function togglePassword(id) {
+            const input = document.getElementById(id);
+            if (input.type === 'password') {
+                input.type = 'text';
+            } else {
+                input.type = 'password';
+            }
+        }
+    </script>
+</body>
+</html>

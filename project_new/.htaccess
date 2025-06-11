@@ -1,0 +1,17 @@
+# Standard .htaccess file
+# Example: Deny access to sensitive files
+# <Files ".env">
+#   Require all denied
+# </Files>
+
+# Example: Rewrite rules for front controller (if public/ is not document root)
+# RewriteEngine On
+# RewriteCond %{REQUEST_FILENAME} !-f
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteRule ^ index.php [L]
+
+# If project_new/public/ is the document root, then the primary .htaccess
+# for routing would typically be in project_new/public/.htaccess
+# This .htaccess in project_new/ might be for project-wide rules not specific
+# to web serving, or if the web server is configured to look here.
+# For now, keeping it minimal.
