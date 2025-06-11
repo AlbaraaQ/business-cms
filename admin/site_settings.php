@@ -16,27 +16,31 @@ if (isset($_SESSION['message'])) {
 }
 
 // Fetch current settings
-$settings = $db->queryOne("SELECT * FROM settings ORDER BY setting_id ASC LIMIT 1");
-if (!$settings) {
-    $settings = [
-        'site_name' => '', 'site_tagline' => '', 'site_description' => '',
-        'meta_keywords' => '', 'contact_phone' => '', 'contact_email' => '', 'contact_address' => '',
-        'whatsapp_link' => '', 'instagram_link' => '', 'twitter_link' => '', 'facebook_link' => '',
-        'footer_text' => '', 'map_location_name' => '', 'map_lat' => '', 'map_lng' => '', 'map_api_key' => '',
-        'site_logo_path' => null, 'site_favicon_path' => null, 'og_image_path' => null,
-        'google_analytics_id' => '', 'google_tag_manager_id' => '', 'facebook_pixel_id' => '',
-        'enabled_frontend_sections' => json_encode([
-            "hero" => true, "about" => true, "services" => true, "projects" => true, 
-            "testimonials" => true, "facts" => true, "contact" => true, "map" => true
-        ])
-    ];
+$settings_from_db = $db->query("SELECT setting_name, setting_value FROM settings");
+$settings_array = [];
+foreach ($settings_from_db as $row) {
+    $settings_array[$row['setting_name']] = $row['setting_value'];
 }
 
-// Decode JSON for enabled_frontend_sections
-$enabled_frontend_sections = json_decode($settings['enabled_frontend_sections'] ?? '[]', true) ?: [
-    "hero" => true, "about" => true, "services" => true, "projects" => true, 
-    "testimonials" => true, "facts" => true, "contact" => true, "map" => true
+// Default values for settings not in DB yet, to avoid errors and provide fallbacks
+$defaults = [
+    'site_name' => '', 'site_tagline' => '', 'site_description' => '',
+    'meta_keywords' => '', 'contact_phone' => '', 'contact_email' => '', 'contact_address' => '',
+    'whatsapp_link' => '', 'instagram_link' => '', 'twitter_link' => '', 'facebook_link' => '',
+    'footer_text' => '', 'map_location_name' => '', 'map_lat' => '', 'map_lng' => '', 'map_api_key' => '',
+    'site_logo_path' => null, 'site_favicon_path' => null, 'og_image_path' => null,
+    'google_analytics_id' => '', 'google_tag_manager_id' => '', 'facebook_pixel_id' => '',
+    'enabled_frontend_sections' => json_encode([
+        "hero" => true, "about" => true, "services" => true, "projects" => true,
+        "testimonials" => true, "facts" => true, "contact" => true, "map" => true
+    ])
 ];
+
+// Merge fetched settings with defaults. Fetched values will overwrite defaults.
+$settings = array_merge($defaults, $settings_array);
+
+// Decode JSON for enabled_frontend_sections
+$enabled_frontend_sections = json_decode($settings['enabled_frontend_sections'], true) ?: json_decode($defaults['enabled_frontend_sections'], true);
 
 // Define available frontend sections
 $available_sections = [
@@ -72,19 +76,19 @@ $available_sections = [
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                 <div>
                     <label for="site_name" class="block text-sm font-medium text-gray-700 mb-1">اسم الموقع:</label>
-                    <input type="text" name="site_name" id="site_name" value="<?php echo htmlspecialchars($settings['site_name'] ?? ''); ?>" class="form-input" required>
+                    <input type="text" name="site_name" id="site_name" value="<?php echo htmlspecialchars($settings['site_name']); ?>" class="form-input" required>
                 </div>
                 <div>
                     <label for="site_tagline" class="block text-sm font-medium text-gray-700 mb-1">شعار الموقع:</label>
-                    <input type="text" name="site_tagline" id="site_tagline" value="<?php echo htmlspecialchars($settings['site_tagline'] ?? ''); ?>" class="form-input">
+                    <input type="text" name="site_tagline" id="site_tagline" value="<?php echo htmlspecialchars($settings['site_tagline']); ?>" class="form-input">
                 </div>
                 <div class="md:col-span-2">
                     <label for="site_description" class="block text-sm font-medium text-gray-700 mb-1">وصف الموقع (لـ SEO):</label>
-                    <textarea name="site_description" id="site_description" rows="3" class="form-input"><?php echo htmlspecialchars($settings['site_description'] ?? ''); ?></textarea>
+                    <textarea name="site_description" id="site_description" rows="3" class="form-input"><?php echo htmlspecialchars($settings['site_description']); ?></textarea>
                 </div>
                 <div class="md:col-span-2">
                     <label for="meta_keywords" class="block text-sm font-medium text-gray-700 mb-1">كلمات دلالية (لـ SEO):</label>
-                    <input type="text" name="meta_keywords" id="meta_keywords" value="<?php echo htmlspecialchars($settings['meta_keywords'] ?? ''); ?>" class="form-input" placeholder="كلمات مفتاحية مفصولة بفواصل">
+                    <input type="text" name="meta_keywords" id="meta_keywords" value="<?php echo htmlspecialchars($settings['meta_keywords']); ?>" class="form-input" placeholder="كلمات مفتاحية مفصولة بفواصل">
                 </div>
             </div>
         </fieldset>
@@ -95,15 +99,15 @@ $available_sections = [
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                 <div>
                     <label for="contact_phone" class="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف:</label>
-                    <input type="tel" name="contact_phone" id="contact_phone" value="<?php echo htmlspecialchars($settings['contact_phone'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="tel" name="contact_phone" id="contact_phone" value="<?php echo htmlspecialchars($settings['contact_phone']); ?>" class="form-input ltr text-left">
                 </div>
                 <div>
                     <label for="contact_email" class="block text-sm font-medium text-gray-700 mb-1">البريد الإلكتروني:</label>
-                    <input type="email" name="contact_email" id="contact_email" value="<?php echo htmlspecialchars($settings['contact_email'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="email" name="contact_email" id="contact_email" value="<?php echo htmlspecialchars($settings['contact_email']); ?>" class="form-input ltr text-left">
                 </div>
                 <div class="md:col-span-2">
                     <label for="contact_address" class="block text-sm font-medium text-gray-700 mb-1">العنوان:</label>
-                    <input type="text" name="contact_address" id="contact_address" value="<?php echo htmlspecialchars($settings['contact_address'] ?? ''); ?>" class="form-input">
+                    <input type="text" name="contact_address" id="contact_address" value="<?php echo htmlspecialchars($settings['contact_address']); ?>" class="form-input">
                 </div>
             </div>
         </fieldset>
@@ -114,19 +118,19 @@ $available_sections = [
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                 <div>
                     <label for="whatsapp_link" class="block text-sm font-medium text-gray-700 mb-1">رابط واتساب:</label>
-                    <input type="url" name="whatsapp_link" id="whatsapp_link" value="<?php echo htmlspecialchars($settings['whatsapp_link'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="url" name="whatsapp_link" id="whatsapp_link" value="<?php echo htmlspecialchars($settings['whatsapp_link']); ?>" class="form-input ltr text-left">
                 </div>
                 <div>
                     <label for="instagram_link" class="block text-sm font-medium text-gray-700 mb-1">رابط انستغرام:</label>
-                    <input type="url" name="instagram_link" id="instagram_link" value="<?php echo htmlspecialchars($settings['instagram_link'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="url" name="instagram_link" id="instagram_link" value="<?php echo htmlspecialchars($settings['instagram_link']); ?>" class="form-input ltr text-left">
                 </div>
                 <div>
                     <label for="twitter_link" class="block text-sm font-medium text-gray-700 mb-1">رابط تويتر:</label>
-                    <input type="url" name="twitter_link" id="twitter_link" value="<?php echo htmlspecialchars($settings['twitter_link'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="url" name="twitter_link" id="twitter_link" value="<?php echo htmlspecialchars($settings['twitter_link']); ?>" class="form-input ltr text-left">
                 </div>
                 <div>
                     <label for="facebook_link" class="block text-sm font-medium text-gray-700 mb-1">رابط فيسبوك:</label>
-                    <input type="url" name="facebook_link" id="facebook_link" value="<?php echo htmlspecialchars($settings['facebook_link'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="url" name="facebook_link" id="facebook_link" value="<?php echo htmlspecialchars($settings['facebook_link']); ?>" class="form-input ltr text-left">
                 </div>
             </div>
         </fieldset>
@@ -196,15 +200,15 @@ $available_sections = [
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
                 <div>
                     <label for="google_analytics_id" class="block text-sm font-medium text-gray-700 mb-1">Google Analytics:</label>
-                    <input type="text" name="google_analytics_id" id="google_analytics_id" value="<?php echo htmlspecialchars($settings['google_analytics_id'] ?? ''); ?>" class="form-input ltr text-left" placeholder="UA-XXXXXX-X">
+                    <input type="text" name="google_analytics_id" id="google_analytics_id" value="<?php echo htmlspecialchars($settings['google_analytics_id']); ?>" class="form-input ltr text-left" placeholder="UA-XXXXXX-X">
                 </div>
                 <div>
                     <label for="google_tag_manager_id" class="block text-sm font-medium text-gray-700 mb-1">Google Tag Manager:</label>
-                    <input type="text" name="google_tag_manager_id" id="google_tag_manager_id" value="<?php echo htmlspecialchars($settings['google_tag_manager_id'] ?? ''); ?>" class="form-input ltr text-left" placeholder="GTM-XXXXXX">
+                    <input type="text" name="google_tag_manager_id" id="google_tag_manager_id" value="<?php echo htmlspecialchars($settings['google_tag_manager_id']); ?>" class="form-input ltr text-left" placeholder="GTM-XXXXXX">
                 </div>
                 <div>
                     <label for="facebook_pixel_id" class="block text-sm font-medium text-gray-700 mb-1">Facebook Pixel:</label>
-                    <input type="text" name="facebook_pixel_id" id="facebook_pixel_id" value="<?php echo htmlspecialchars($settings['facebook_pixel_id'] ?? ''); ?>" class="form-input ltr text-left" placeholder="XXXXXXXXXXXXXXX">
+                    <input type="text" name="facebook_pixel_id" id="facebook_pixel_id" value="<?php echo htmlspecialchars($settings['facebook_pixel_id']); ?>" class="form-input ltr text-left" placeholder="XXXXXXXXXXXXXXX">
                 </div>
             </div>
         </fieldset>
@@ -215,19 +219,19 @@ $available_sections = [
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                 <div class="md:col-span-2">
                     <label for="map_location_name" class="block text-sm font-medium text-gray-700 mb-1">اسم الموقع على الخريطة:</label>
-                    <input type="text" name="map_location_name" id="map_location_name" value="<?php echo htmlspecialchars($settings['map_location_name'] ?? ''); ?>" class="form-input">
+                    <input type="text" name="map_location_name" id="map_location_name" value="<?php echo htmlspecialchars($settings['map_location_name']); ?>" class="form-input">
                 </div>
                 <div>
                     <label for="map_lat" class="block text-sm font-medium text-gray-700 mb-1">خط العرض:</label>
-                    <input type="text" name="map_lat" id="map_lat" value="<?php echo htmlspecialchars($settings['map_lat'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="text" name="map_lat" id="map_lat" value="<?php echo htmlspecialchars($settings['map_lat']); ?>" class="form-input ltr text-left">
                 </div>
                 <div>
                     <label for="map_lng" class="block text-sm font-medium text-gray-700 mb-1">خط الطول:</label>
-                    <input type="text" name="map_lng" id="map_lng" value="<?php echo htmlspecialchars($settings['map_lng'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="text" name="map_lng" id="map_lng" value="<?php echo htmlspecialchars($settings['map_lng']); ?>" class="form-input ltr text-left">
                 </div>
                 <div class="md:col-span-2">
                     <label for="map_api_key" class="block text-sm font-medium text-gray-700 mb-1">مفتاح Google Maps API:</label>
-                    <input type="text" name="map_api_key" id="map_api_key" value="<?php echo htmlspecialchars($settings['map_api_key'] ?? ''); ?>" class="form-input ltr text-left">
+                    <input type="text" name="map_api_key" id="map_api_key" value="<?php echo htmlspecialchars($settings['map_api_key']); ?>" class="form-input ltr text-left">
                 </div>
             </div>
         </fieldset>
@@ -237,7 +241,7 @@ $available_sections = [
             <legend class="text-lg font-semibold text-pink-600 px-2">نصوص التذييل</legend>
             <div class="mt-4">
                 <label for="footer_text" class="block text-sm font-medium text-gray-700 mb-1">نص حقوق النشر:</label>
-                <textarea name="footer_text" id="footer_text" rows="3" class="form-input tinymceeditor_basic"><?php echo htmlspecialchars($settings['footer_text'] ?? ('© ' . date('Y') . ' ' . ($settings['site_name'] ?: 'اسم موقعك'))); ?></textarea>
+                <textarea name="footer_text" id="footer_text" rows="3" class="form-input tinymceeditor_basic"><?php echo htmlspecialchars($settings['footer_text'] ?: ('© ' . date('Y') . ' ' . ($settings['site_name'] ?: 'اسم موقعك'))); ?></textarea>
             </div>
         </fieldset>
 

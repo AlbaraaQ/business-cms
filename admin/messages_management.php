@@ -28,9 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     switch ($action) {
         case 'mark_read':
             $message_id = (int)$_POST['message_id'];
-            if($db->execute("UPDATE messages SET is_read = 1, updated_at = NOW() WHERE id = :id", [':id' => $message_id])) {
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'mark_message_read', 'messages', $message_id);
+            // Removed updated_at = NOW()
+            if($db->execute("UPDATE messages SET is_read = 1 WHERE id = :id", [':id' => $message_id])) {
+                // log_activity removed
                 $success_message = "تم تحديد الرسالة كمقروءة";
             } else {
                 $error_message = "فشل تحديث حالة الرسالة.";
@@ -39,54 +39,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
         case 'mark_unread':
             $message_id = (int)$_POST['message_id'];
-            if($db->execute("UPDATE messages SET is_read = 0, updated_at = NOW() WHERE id = :id", [':id' => $message_id])) {
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'mark_message_unread', 'messages', $message_id);
+            // Removed updated_at = NOW()
+            if($db->execute("UPDATE messages SET is_read = 0 WHERE id = :id", [':id' => $message_id])) {
+                // log_activity removed
                 $success_message = "تم تحديد الرسالة كغير مقروءة";
             } else {
                 $error_message = "فشل تحديث حالة الرسالة.";
             }
             break;
             
-        case 'reply':
-            $message_id = (int)$_POST['message_id'];
-            $reply_message = trim($_POST['reply_message']);
-            
-            if (!empty($reply_message)) {
-                $sql_reply = "UPDATE messages SET is_replied = 1, reply_message = :reply_message, replied_at = NOW(), replied_by = :replied_by, updated_at = NOW() WHERE id = :id";
-                $params_reply = [
-                    ':reply_message' => $reply_message,
-                    ':replied_by' => $_SESSION['admin_id'],
-                    ':id' => $message_id
-                ];
-                if($db->execute($sql_reply, $params_reply)) {
-                    // تسجيل النشاط
-                    log_activity($_SESSION['admin_id'], 'reply_message', 'messages', $message_id);
-                    $success_message = "تم إرسال الرد بنجاح";
-                } else {
-                    $error_message = "فشل إرسال الرد.";
-                }
-                
-                $success_message = "تم إرسال الرد بنجاح";
-            } else {
-                $error_message = "يرجى كتابة نص الرد";
-            }
-            break;
+        // 'reply' case block removed entirely
             
         case 'delete':
             $message_id = (int)$_POST['message_id'];
             
-            // الحصول على بيانات الرسالة قبل الحذف
-            $message_data = $db->queryOne("SELECT * FROM messages WHERE id = :id", [':id' => $message_id]);
+            // No need to fetch message_data if log_activity is removed
+            // $message_data = $db->queryOne("SELECT id, sender_name FROM messages WHERE id = :id", [':id' => $message_id]);
             
-            if ($message_data) {
-                if($db->execute("DELETE FROM messages WHERE id = :id", [':id' => $message_id])) {
-                    // تسجيل النشاط
-                    log_activity($_SESSION['admin_id'], 'delete_message', 'messages', $message_id, $message_data);
-                    $success_message = "تم حذف الرسالة بنجاح";
-                } else {
-                    $error_message = "فشل حذف الرسالة.";
-                }
+            if($db->execute("DELETE FROM messages WHERE id = :id", [':id' => $message_id])) {
+                // log_activity removed
+                $success_message = "تم حذف الرسالة بنجاح";
+            } else {
+                $error_message = "فشل حذف الرسالة.";
             }
             break;
     }
@@ -102,74 +76,50 @@ $search = trim($_GET['search'] ?? '');
 
 // بناء الاستعلام
 $where_conditions = [];
-$params = [];
+$params = []; // Use named parameters for clarity
 
 if ($filter === 'unread') {
     $where_conditions[] = "is_read = 0";
 } elseif ($filter === 'read') {
     $where_conditions[] = "is_read = 1";
-} elseif ($filter === 'replied') {
-    $where_conditions[] = "is_replied = 1";
-} elseif ($filter === 'unreplied') {
-    $where_conditions[] = "is_replied = 0";
 }
+// Removed 'replied' and 'unreplied' filters
 
 if (!empty($search)) {
-    $where_conditions[] = "(name LIKE ? OR email LIKE ? OR subject LIKE ? OR message LIKE ?)";
-    $search_param = "%$search%";
-    $params = array_merge($params, [$search_param, $search_param, $search_param, $search_param]);
+    // Updated field names for search
+    $where_conditions[] = "(sender_name LIKE :search OR sender_email LIKE :search OR subject LIKE :search OR message_body LIKE :search)";
+    $params[':search'] = "%$search%";
 }
 
 $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
 
 // عدد الرسائل الإجمالي
-// For $db->queryOne with positional placeholders, parameters must be indexed numerically in order.
-// If $search is empty, $params is empty. If $search is not empty, $params has 4 elements.
 $count_query_sql = "SELECT COUNT(*) as total_count FROM messages $where_clause";
-$count_result = $db->queryOne($count_query_sql, $params);
+$count_result = $db->queryOne($count_query_sql, $params); // Pass named params
 $total_messages = $count_result ? $count_result['total_count'] : 0;
 
 
 // الحصول على الرسائل
-// Similar care for parameters if they are positional for $db->query
-$messages_query_sql = "SELECT m.*, s.title as service_title, p.title as project_title, u.full_name as replied_by_name
-                       FROM messages m
-                       LEFT JOIN services s ON m.service_id = s.id
-                       LEFT JOIN projects p ON m.project_id = p.id
-                       LEFT JOIN users u ON m.replied_by = u.id
+// Removed JOINs, updated field names, and ORDER BY received_at
+$messages_query_sql = "SELECT id, sender_name, sender_email, subject, message_body, received_at, is_read
+                       FROM messages
                        $where_clause
-                       ORDER BY m.created_at DESC
+                       ORDER BY received_at DESC
                        LIMIT :limit OFFSET :offset";
 
-$query_params_for_messages = $params; // Start with existing search/filter params
-$query_params_for_messages['limit'] = $per_page;
-$query_params_for_messages['offset'] = $offset;
-// Convert to named if $params was positional for search
-// This is getting complex due to mixed param types. Assuming $db->query handles it or $params is made named.
-// For simplicity, let's assume $db->query can handle an array of mixed (indexed for WHERE, named for LIMIT/OFFSET)
-// Or, better, make all params named if possible or stick to positional if the class allows.
-// Given the structure of $params from search, it's positional. Let's adjust.
-$messages_query_sql_positional = "SELECT m.*, s.title as service_title, p.title as project_title, u.full_name as replied_by_name
-                                 FROM messages m
-                                 LEFT JOIN services s ON m.service_id = s.id
-                                 LEFT JOIN projects p ON m.project_id = p.id
-                                 LEFT JOIN users u ON m.replied_by = u.id
-                                 $where_clause
-                                 ORDER BY m.created_at DESC
-                                 LIMIT ? OFFSET ?";
-$params_for_messages_positional = $params;
-$params_for_messages_positional[] = $per_page;
-$params_for_messages_positional[] = $offset;
-$messages = $db->query($messages_query_sql_positional, $params_for_messages_positional);
+$query_params_for_messages = $params; // Start with existing search/filter params (named)
+$query_params_for_messages[':limit'] = $per_page;
+$query_params_for_messages[':offset'] = $offset;
+
+$messages = $db->query($messages_query_sql, $query_params_for_messages);
 
 
-// إحصائيات سريعة
+// إحصائيات سريعة - Removed is_replied logic
 $stats_sql = "SELECT
     COUNT(*) as total,
-    SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread,
-    SUM(CASE WHEN is_replied = 1 THEN 1 ELSE 0 END) as replied
+    SUM(CASE WHEN is_read = 0 THEN 1 ELSE 0 END) as unread
     FROM messages";
-$stats = $db->queryOne($stats_sql);
+$stats = $db->queryOne($stats_sql); // No params needed for this simplified query
 
 $total_pages = ceil($total_messages / $per_page);
 
@@ -204,7 +154,7 @@ include 'includes/header.php';
 
             <!-- إحصائيات سريعة -->
             <div class="row mb-4">
-                <div class="col-md-3">
+                <div class="col-md-6"> {/* Adjusted to col-md-6 for two boxes */}
                     <div class="card text-center">
                         <div class="card-body">
                             <h5 class="card-title text-primary"><?php echo $stats['total']; ?></h5>
@@ -212,30 +162,15 @@ include 'includes/header.php';
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-6"> {/* Adjusted to col-md-6 for two boxes */}
                     <div class="card text-center">
                         <div class="card-body">
-                            <h5 class="card-title text-warning"><?php echo $stats['unread']; ?></h5>
+                            <h5 class="card-title text-warning"><?php echo $stats['unread'] ?? 0; ?></h5> {/* Added null coalescing for unread */}
                             <p class="card-text">غير مقروءة</p>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="card text-center">
-                        <div class="card-body">
-                            <h5 class="card-title text-success"><?php echo $stats['replied']; ?></h5>
-                            <p class="card-text">تم الرد عليها</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="card text-center">
-                        <div class="card-body">
-                            <h5 class="card-title text-info"><?php echo $stats['total'] - $stats['replied']; ?></h5>
-                            <p class="card-text">بانتظار الرد</p>
-                        </div>
-                    </div>
-                </div>
+                {/* Replied and Awaiting Reply stat boxes removed */}
             </div>
 
             <!-- فلاتر البحث -->
@@ -248,14 +183,13 @@ include 'includes/header.php';
                                 <option value="all" <?php echo $filter === 'all' ? 'selected' : ''; ?>>جميع الرسائل</option>
                                 <option value="unread" <?php echo $filter === 'unread' ? 'selected' : ''; ?>>غير مقروءة</option>
                                 <option value="read" <?php echo $filter === 'read' ? 'selected' : ''; ?>>مقروءة</option>
-                                <option value="replied" <?php echo $filter === 'replied' ? 'selected' : ''; ?>>تم الرد عليها</option>
-                                <option value="unreplied" <?php echo $filter === 'unreplied' ? 'selected' : ''; ?>>بانتظار الرد</option>
+                                {/* Replied and Awaiting Reply filter options removed */}
                             </select>
                         </div>
                         <div class="col-md-6">
                             <label for="search" class="form-label">البحث</label>
                             <input type="text" name="search" id="search" class="form-control" 
-                                   placeholder="البحث في الاسم، البريد الإلكتروني، الموضوع أو الرسالة..." 
+                                   placeholder="البحث في اسم المرسل، بريده، الموضوع أو نص الرسالة..."
                                    value="<?php echo htmlspecialchars($search); ?>">
                         </div>
                         <div class="col-md-3">
@@ -288,9 +222,9 @@ include 'includes/header.php';
                                     <tr>
                                         <th>الحالة</th>
                                         <th>المرسل</th>
-                                        <th>الموضوع</th>
-                                        <th>الخدمة/المشروع</th>
-                                        <th>تاريخ الإرسال</th>
+                                        <th>الموضوع/الرسالة</th>
+                                        {/* Service/Project column removed */}
+                                        <th>تاريخ الاستلام</th>
                                         <th>الإجراءات</th>
                                     </tr>
                                 </thead>
@@ -298,45 +232,30 @@ include 'includes/header.php';
                                     <?php foreach ($messages as $message): ?>
                                         <tr class="<?php echo !$message['is_read'] ? 'table-warning' : ''; ?>">
                                             <td>
-                                                <div class="d-flex flex-column">
-                                                    <?php if (!$message['is_read']): ?>
-                                                        <span class="badge bg-warning text-dark mb-1">غير مقروءة</span>
-                                                    <?php else: ?>
-                                                        <span class="badge bg-success mb-1">مقروءة</span>
-                                                    <?php endif; ?>
-                                                    
-                                                    <?php if ($message['is_replied']): ?>
-                                                        <span class="badge bg-info">تم الرد</span>
-                                                    <?php endif; ?>
-                                                </div>
+                                                <?php if (!$message['is_read']): ?>
+                                                    <span class="badge bg-warning text-dark">غير مقروءة</span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-success">مقروءة</span>
+                                                <?php endif; ?>
+                                                {/* Replied badge removed */}
                                             </td>
                                             <td>
                                                 <div>
-                                                    <strong><?php echo htmlspecialchars($message['name']); ?></strong><br>
-                                                    <small class="text-muted"><?php echo htmlspecialchars($message['email']); ?></small>
-                                                    <?php if ($message['phone']): ?>
-                                                        <br><small class="text-muted"><?php echo htmlspecialchars($message['phone']); ?></small>
-                                                    <?php endif; ?>
+                                                    <strong><?php echo htmlspecialchars($message['sender_name']); ?></strong><br>
+                                                    <small class="text-muted"><?php echo htmlspecialchars($message['sender_email']); ?></small>
+                                                    {/* Phone removed */}
                                                 </div>
                                             </td>
                                             <td>
                                                 <strong><?php echo htmlspecialchars($message['subject'] ?: 'بدون موضوع'); ?></strong><br>
                                                 <small class="text-muted">
-                                                    <?php echo mb_substr(strip_tags($message['message']), 0, 100) . '...'; ?>
+                                                    <?php echo mb_substr(strip_tags($message['message_body']), 0, 100) . '...'; ?>
                                                 </small>
                                             </td>
-                                            <td>
-                                                <?php if ($message['service_title']): ?>
-                                                    <span class="badge bg-primary">خدمة: <?php echo htmlspecialchars($message['service_title']); ?></span>
-                                                <?php elseif ($message['project_title']): ?>
-                                                    <span class="badge bg-secondary">مشروع: <?php echo htmlspecialchars($message['project_title']); ?></span>
-                                                <?php else: ?>
-                                                    <span class="text-muted">عام</span>
-                                                <?php endif; ?>
-                                            </td>
+                                            {/* Service/Project data cell removed */}
                                             <td>
                                                 <small>
-                                                    <?php echo date('Y-m-d H:i', strtotime($message['created_at'])); ?>
+                                                    <?php echo date('Y-m-d H:i', strtotime($message['received_at'])); ?>
                                                 </small>
                                             </td>
                                             <td>
@@ -348,6 +267,7 @@ include 'includes/header.php';
                                                     
                                                     <?php if (!$message['is_read']): ?>
                                                         <form method="POST" class="d-inline">
+                                                            <?php echo csrf_input_field(); ?>
                                                             <input type="hidden" name="action" value="mark_read">
                                                             <input type="hidden" name="message_id" value="<?php echo $message['id']; ?>">
                                                             <button type="submit" class="btn btn-outline-success" title="تحديد كمقروءة">
@@ -356,6 +276,7 @@ include 'includes/header.php';
                                                         </form>
                                                     <?php else: ?>
                                                         <form method="POST" class="d-inline">
+                                                            <?php echo csrf_input_field(); ?>
                                                             <input type="hidden" name="action" value="mark_unread">
                                                             <input type="hidden" name="message_id" value="<?php echo $message['id']; ?>">
                                                             <button type="submit" class="btn btn-outline-warning" title="تحديد كغير مقروءة">
@@ -364,10 +285,7 @@ include 'includes/header.php';
                                                         </form>
                                                     <?php endif; ?>
                                                     
-                                                    <button type="button" class="btn btn-outline-info" 
-                                                            onclick="replyMessage(<?php echo $message['id']; ?>)">
-                                                        <i class="fas fa-reply"></i>
-                                                    </button>
+                                                    {/* Reply button removed */}
                                                     
                                                     <button type="button" class="btn btn-outline-danger" 
                                                             onclick="deleteMessage(<?php echo $message['id']; ?>)">
@@ -427,32 +345,7 @@ include 'includes/header.php';
     </div>
 </div>
 
-<!-- مودال الرد على الرسالة -->
-<div class="modal fade" id="replyModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">الرد على الرسالة</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST">
-                <div class="modal-body">
-                    <input type="hidden" name="action" value="reply">
-                    <input type="hidden" name="message_id" id="replyMessageId">
-                    
-                    <div class="mb-3">
-                        <label for="reply_message" class="form-label">نص الرد</label>
-                        <textarea name="reply_message" id="reply_message" class="form-control" rows="5" required></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary">إرسال الرد</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+<!-- Reply Modal and its trigger are removed -->
 
 <script>
 function viewMessage(messageId) {
@@ -472,12 +365,14 @@ function viewMessage(messageId) {
             alert('حدث خطأ في تحميل الرسالة');
         }
     });
+    // If viewMessage makes an AJAX call, its success handler needs to be updated
+    // to expect new field names (sender_name, sender_email, subject, message_body, received_at)
+    // and not expect phone, service/project details, or reply info.
+    // For this subtask, we ensure the modal structure and JS here are not breaking.
+    // The actual content of data.html is generated by ajax_handler.php (if used for this).
 }
 
-function replyMessage(messageId) {
-    document.getElementById('replyMessageId').value = messageId;
-    new bootstrap.Modal(document.getElementById('replyModal')).show();
-}
+// replyMessage function and its call removed.
 
 function deleteMessage(messageId) {
     if (confirm('هل أنت متأكد من حذف هذه الرسالة؟ لا يمكن التراجع عن هذا الإجراء.')) {
@@ -486,6 +381,7 @@ function deleteMessage(messageId) {
         form.innerHTML = `
             <input type="hidden" name="action" value="delete">
             <input type="hidden" name="message_id" value="${messageId}">
+            <?php echo csrf_input_field_for_js(); ?>
         `;
         document.body.appendChild(form);
         form.submit();

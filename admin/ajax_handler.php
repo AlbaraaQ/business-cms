@@ -55,18 +55,9 @@ switch ($action) {
             break;
         }
         $section_id = (int)$_GET['id'];
-        $section = $db->queryOne("SELECT * FROM homepage_sections WHERE section_id = :id", [':id' => $section_id]);
+        // Use new schema: id, name, content, image_url, video_url
+        $section = $db->queryOne("SELECT id, name, content, image_url, video_url FROM sections WHERE id = :id", [':id' => $section_id]);
         if ($section) {
-            // Attempt to decode JSON string from data_attributes, ensure it doesn't break if already array/object
-            if (is_string($section['data_attributes'])) {
-                $decoded_attributes = json_decode($section['data_attributes'], true);
-                if (json_last_error() === JSON_ERROR_NONE) {
-                    $section['data_attributes'] = $decoded_attributes;
-                } else {
-                    // Optionally log error or handle malformed JSON string
-                    $section['data_attributes'] = null; // Or set to empty array []
-                }
-            }
             send_json_response(['success' => true, 'section' => $section]);
         } else {
             send_json_response(['success' => false, 'message' => 'لم يتم العثور على القسم.']);
@@ -79,70 +70,75 @@ switch ($action) {
             break;
         }
 
-        $section_id = (int)sanitize_input($_POST['section_id'] ?? 0);
+        $section_id = (int)sanitize_input($_POST['section_id'] ?? 0); // This is 'id' in the new table
+
+        // New schema fields from form
+        $name = sanitize_input($_POST['name'] ?? ''); // Was 'title'
+        $content = $_POST['content'] ?? ''; // Assuming TinyMCE content, handle sanitization appropriately if needed
+        $video_url = sanitize_input($_POST['video_url'] ?? null);
+
         $data = [
-            'title' => sanitize_input($_POST['title'] ?? ''),
-            'subtitle' => sanitize_input($_POST['subtitle'] ?? null),
-            'section_type' => sanitize_input($_POST['section_type'] ?? ''),
-            'content' => $_POST['content'] ?? '', // Sanitize based on allowed HTML for this field by TinyMCE
-            'data_attributes' => $_POST['data_attributes'] ?? null, // Expecting JSON string
-            'is_visible' => isset($_POST['is_visible']) ? 1 : 0,
+            'name' => $name,
+            'content' => $content,
+            'video_url' => $video_url,
         ];
 
-        if (empty($data['section_type'])) {
-            send_json_response(['success' => false, 'message' => 'نوع القسم مطلوب.']);
+        if (empty($data['name'])) { // Name is likely mandatory
+            send_json_response(['success' => false, 'message' => 'اسم القسم مطلوب.']);
             break;
         }
 
-        // Validate data_attributes is valid JSON string or null
-        if (!empty($data['data_attributes'])) {
-            json_decode($data['data_attributes']);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                send_json_response(['success' => false, 'message' => 'بيانات إضافية (JSON) غير صالحة.']);
+        // Handle image upload for image_url
+        $current_image_url = null;
+        if ($section_id > 0) {
+            $old_section_data = $db->queryOne("SELECT image_url FROM sections WHERE id = :id", [':id' => $section_id]);
+            if ($old_section_data) {
+                $current_image_url = $old_section_data['image_url'];
+            }
+        }
+
+        if (isset($_POST['remove_image_file']) && $_POST['remove_image_file'] == '1' && !empty($current_image_url)) {
+            delete_uploaded_file($current_image_url);
+            $data['image_url'] = null;
+        } elseif (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
+            if (!empty($current_image_url)) {
+                delete_uploaded_file($current_image_url);
+            }
+            $uploaded_path = handle_file_upload($_FILES['image_file'], 'sections'); // 'sections' is subfolder
+            if ($uploaded_path) {
+                $data['image_url'] = $uploaded_path;
+            } else {
+                send_json_response(['success' => false, 'message' => 'فشل رفع صورة القسم.']);
                 break;
             }
         } else {
-            $data['data_attributes'] = null; // Store as NULL if empty
-        }
-
-        $existing_background_image = sanitize_input($_POST['existing_background_image'] ?? null);
-
-        if (isset($_FILES['background_image']) && $_FILES['background_image']['error'] === UPLOAD_ERR_OK) {
-            if ($section_id > 0) { // If updating, try to get current image to delete
-                $old_section = $db->queryOne("SELECT background_image FROM homepage_sections WHERE section_id = :id", [':id' => $section_id]);
-                 if ($old_section && !empty($old_section['background_image'])) {
-                    delete_uploaded_file($old_section['background_image']);
-                 }
+            // If no new image and no removal, keep existing image path
+            if ($section_id > 0 && $current_image_url !== null) {
+                 $data['image_url'] = $current_image_url;
+            } else if ($section_id == 0) { // For new section, if no image, set to null
+                 $data['image_url'] = null;
             }
-            $uploaded_path = handle_file_upload($_FILES['background_image'], 'sections');
-            if ($uploaded_path) {
-                $data['background_image'] = $uploaded_path;
-            } else {
-                send_json_response(['success' => false, 'message' => 'فشل رفع صورة الخلفية: ' . ($_FILES['background_image']['name'] ?? 'N/A')]);
-                break;
-            }
-        } elseif (isset($_POST['remove_background_image']) && $_POST['remove_background_image'] == '1' && $section_id > 0) {
-             $old_section = $db->queryOne("SELECT background_image FROM homepage_sections WHERE section_id = :id", [':id' => $section_id]);
-             if ($old_section && !empty($old_section['background_image'])) {
-                delete_uploaded_file($old_section['background_image']);
-             }
-            $data['background_image'] = null;
-        } elseif ($section_id > 0 && !empty($existing_background_image) && (!isset($_POST['remove_background_image']) || $_POST['remove_background_image'] != '1')) {
-            $data['background_image'] = $existing_background_image;
         }
 
 
         if ($section_id > 0) { // Update
-            $data['updated_at'] = date('Y-m-d H:i:s');
-            $set_clauses = [];
-            $params_update = [];
-            foreach ($data as $key => $value) {
-                $set_clauses[] = "$key = :$key";
-                $params_update[":$key"] = $value;
-            }
-            $params_update[':section_id_condition'] = $section_id;
+            $params_update = $data;
+            $params_update[':id'] = $section_id;
 
-            $sql = "UPDATE homepage_sections SET " . implode(', ', $set_clauses) . " WHERE section_id = :section_id_condition";
+            $set_clauses = [];
+            foreach ($data as $key => $value) {
+                 if ($key === 'image_url' && $value === $current_image_url && !isset($_FILES['image_file']) && !(isset($_POST['remove_image_file']) && $_POST['remove_image_file'] == '1') ) {
+                    continue; // Skip updating image_url if it hasn't changed
+                }
+                $set_clauses[] = "$key = :$key";
+            }
+
+            if(empty($set_clauses)){
+                 send_json_response(['success' => true, 'message' => 'لم يتم تغيير أي بيانات.']);
+                 break;
+            }
+
+            $sql = "UPDATE sections SET " . implode(', ', $set_clauses) . ", updated_at = NOW() WHERE id = :id";
 
             if ($db->execute($sql, $params_update)) {
                 send_json_response(['success' => true, 'message' => 'تم تحديث القسم بنجاح.']);
@@ -150,14 +146,9 @@ switch ($action) {
                 send_json_response(['success' => false, 'message' => 'فشل تحديث القسم.']);
             }
         } else { // Insert
-            $max_order_result = $db->queryOne("SELECT MAX(section_order) as max_o FROM homepage_sections");
-            $data['section_order'] = ($max_order_result && $max_order_result['max_o'] !== null) ? $max_order_result['max_o'] + 1 : 1;
-            $data['created_at'] = date('Y-m-d H:i:s');
-            $data['updated_at'] = date('Y-m-d H:i:s');
-
-            $columns = implode(', ', array_keys($data));
-            $placeholders = ':' . implode(', :', array_keys($data));
-            $sql = "INSERT INTO homepage_sections ($columns) VALUES ($placeholders)";
+            // created_at and updated_at handled by NOW()
+            $sql = "INSERT INTO sections (name, content, image_url, video_url, created_at, updated_at)
+                    VALUES (:name, :content, :image_url, :video_url, NOW(), NOW())";
 
             if ($db->execute($sql, $data)) {
                 send_json_response(['success' => true, 'message' => 'تم إضافة القسم بنجاح.', 'new_id' => $db->lastInsertId()]);
@@ -167,53 +158,73 @@ switch ($action) {
         }
         break;
 
-    case 'reorder_sections':
+    // reorder_sections case removed
+    // toggle_section_visibility case removed
+
+    case 'delete_section':
         if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
             send_json_response(['success' => false, 'message' => 'رمز CSRF غير صالح.']);
             break;
         }
-        $ordered_ids_json = $_POST['ordered_ids'] ?? '[]';
-        $ordered_ids = json_decode($ordered_ids_json, true);
+        $section_id = (int)sanitize_input($_POST['id'] ?? 0); // Expect 'id' from confirmDelete
 
-        if (is_array($ordered_ids)) {
-            $pdo = $db->getPdo();
-            $pdo->beginTransaction();
-            try {
-                foreach ($ordered_ids as $index => $id) {
-                    $db->execute("UPDATE homepage_sections SET section_order = :order WHERE section_id = :id", [':order' => $index + 1, ':id' => (int)$id]);
-                }
-                $pdo->commit();
-                send_json_response(['success' => true, 'message' => 'تم تحديث ترتيب الأقسام.']);
-            } catch (Exception $e) {
-                $pdo->rollBack();
-                log_error("Reorder sections failed: " . $e->getMessage());
-                send_json_response(['success' => false, 'message' => 'فشل تحديث الترتيب: ' . $e->getMessage()]);
+        if ($section_id <= 0) {
+            send_json_response(['success' => false, 'message' => 'معرف القسم غير صالح.']);
+            break;
+        }
+
+        $section = $db->queryOne("SELECT image_url FROM sections WHERE id = :id", [':id' => $section_id]);
+
+        if (!$section) {
+            send_json_response(['success' => false, 'message' => 'القسم غير موجود.']);
+            break;
+        }
+
+        if ($db->execute("DELETE FROM sections WHERE id = :id", [':id' => $section_id])) {
+            if ($section && !empty($section['image_url'])) {
+                delete_uploaded_file($section['image_url']);
             }
+            send_json_response(['success' => true, 'message' => 'تم حذف القسم بنجاح.']);
         } else {
-            send_json_response(['success' => false, 'message' => 'بيانات الترتيب غير صالحة.']);
+            send_json_response(['success' => false, 'message' => 'فشل حذف القسم.']);
         }
         break;
 
-    case 'toggle_section_visibility':
-         if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
-            send_json_response(['success' => false, 'message' => 'رمز CSRF غير صالح.']);
+    // --- Facts Management ---
+    // ... (facts cases remain here) ...
+
+    // --- Message Details (for viewMessage modal) ---
+    case 'get_message': // Assuming this is the action called by viewMessage in messages_management.php
+        if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null, false) && !verify_csrf_token($_GET[CSRF_TOKEN_NAME] ?? null, false)) {
+             // Allow GET for this if CSRF is passed in URL, or POST.
+             // However, viewMessage in messages_management.php seems to use POST.
+            send_json_response(['success' => false, 'message' => 'رمز CSRF غير صالح أو مفقود.']);
             break;
         }
-        $section_id = (int)sanitize_input($_POST['section_id'] ?? 0);
-        if ($section_id > 0) {
-            $current = $db->queryOne("SELECT is_visible FROM homepage_sections WHERE section_id = :id", [':id' => $section_id]);
-            if ($current) {
-                $new_visibility = $current['is_visible'] ? 0 : 1;
-                if ($db->execute("UPDATE homepage_sections SET is_visible = :visibility, updated_at = NOW() WHERE section_id = :id", [':visibility' => $new_visibility, ':id' => $section_id])) {
-                    send_json_response(['success' => true, 'message' => 'تم تحديث حالة الظهور.', 'new_status' => $new_visibility]);
-                } else {
-                    send_json_response(['success' => false, 'message' => 'فشل تحديث حالة الظهور.']);
-                }
-            } else {
-                send_json_response(['success' => false, 'message' => 'القسم غير موجود.']);
+
+        $message_id = (int)($_REQUEST['message_id'] ?? 0);
+        if ($message_id <= 0) {
+            send_json_response(['success' => false, 'message' => 'معرف الرسالة غير صالح.']);
+            break;
+        }
+
+        $message = $db->queryOne("SELECT id, sender_name, sender_email, subject, message_body, received_at, is_read FROM messages WHERE id = :id", [':id' => $message_id]);
+
+        if ($message) {
+            // Mark as read if it's being viewed and was unread
+            if (!$message['is_read']) {
+                $db->execute("UPDATE messages SET is_read = 1 WHERE id = :id", [':id' => $message_id]);
             }
+
+            // Construct HTML for the modal body
+            $html = "<p><strong>من:</strong> " . htmlspecialchars($message['sender_name']) . " (" . htmlspecialchars($message['sender_email']) . ")</p>";
+            $html .= "<p><strong>الموضوع:</strong> " . htmlspecialchars($message['subject'] ?: '<em>بدون موضوع</em>') . "</p>";
+            $html .= "<p><strong>تاريخ الاستلام:</strong> " . date('Y-m-d H:i:s', strtotime($message['received_at'])) . "</p>";
+            $html .= "<hr><p><strong>نص الرسالة:</strong></p><div style='white-space: pre-wrap;'>" . nl2br(htmlspecialchars($message['message_body'])) . "</div>";
+
+            send_json_response(['success' => true, 'html' => $html]);
         } else {
-            send_json_response(['success' => false, 'message' => 'معرف القسم غير صالح.']);
+            send_json_response(['success' => false, 'message' => 'لم يتم العثور على الرسالة.']);
         }
         break;
 
@@ -225,7 +236,8 @@ switch ($action) {
             break;
         }
         $fact_id = (int)$_GET['id'];
-        $fact = $db->queryOne("SELECT * FROM facts WHERE fact_id = :id", [':id' => $fact_id]);
+        // Use new schema fields: id, fact_text, fact_value, icon_class
+        $fact = $db->queryOne("SELECT id, fact_text, fact_value, icon_class FROM facts WHERE id = :id", [':id' => $fact_id]);
         if ($fact) {
             send_json_response(['success' => true, 'fact' => $fact]);
         } else {
@@ -239,37 +251,60 @@ switch ($action) {
             break;
         }
         $fact_id = (int)sanitize_input($_POST['fact_id'] ?? 0);
+
+        // New schema fields from form (map old names to new if necessary)
+        $fact_text = sanitize_input($_POST['fact_text'] ?? ''); // Was 'title'
+        $fact_value = sanitize_input($_POST['fact_value'] ?? ''); // Was 'number'
+        $icon_class = sanitize_input($_POST['icon_class'] ?? null); // Was 'icon'
+
         $data = [
-            'title' => sanitize_input($_POST['title'] ?? ''),
-            'number' => sanitize_input($_POST['number'] ?? ''), // Changed from 'value' to 'number' based on table structure
-            'prefix' => sanitize_input($_POST['prefix'] ?? null),
-            'suffix' => sanitize_input($_POST['suffix'] ?? null),
-            'icon' => sanitize_input($_POST['icon'] ?? null),
-            'order' => (int)sanitize_input($_POST['order'] ?? 0),
+            'fact_text' => $fact_text,
+            'fact_value' => $fact_value,
+            'icon_class' => $icon_class,
         ];
 
-        if (empty($data['title']) || $data['number'] === '') { // Number can be '0'
-            send_json_response(['success' => false, 'message' => 'العنوان والرقم مطلوبان.']);
+        if (empty($data['fact_text']) || $data['fact_value'] === '') { // fact_value can be '0'
+            send_json_response(['success' => false, 'message' => 'نص الحقيقة وقيمتها مطلوبان.']);
             break;
         }
 
         if ($fact_id > 0) { // Update
-            $sql = "UPDATE facts SET title = :title, `number` = :number, prefix = :prefix, suffix = :suffix, icon = :icon, `order` = :order WHERE fact_id = :fact_id_condition";
-            $data['fact_id_condition'] = $fact_id;
-            if ($db->execute($sql, $data)) {
+            $params_update = $data;
+            $params_update[':id'] = $fact_id;
+            $sql = "UPDATE facts SET fact_text = :fact_text, fact_value = :fact_value, icon_class = :icon_class, updated_at = NOW() WHERE id = :id";
+            if ($db->execute($sql, $params_update)) {
                 send_json_response(['success' => true, 'message' => 'تم تحديث الحقيقة بنجاح.']);
             } else {
                 send_json_response(['success' => false, 'message' => 'فشل تحديث الحقيقة.']);
             }
         } else { // Insert
-            $columns = implode(', ', array_map(function($key) { return "`$key`"; }, array_keys($data))); // Add backticks for 'order'
-            $placeholders = ':' . implode(', :', array_keys($data));
-            $sql = "INSERT INTO facts ($columns) VALUES ($placeholders)";
+            // created_at and updated_at handled by NOW()
+            $sql = "INSERT INTO facts (fact_text, fact_value, icon_class, created_at, updated_at)
+                    VALUES (:fact_text, :fact_value, :icon_class, NOW(), NOW())";
             if ($db->execute($sql, $data)) {
                 send_json_response(['success' => true, 'message' => 'تم إضافة الحقيقة بنجاح.', 'new_id' => $db->lastInsertId()]);
             } else {
                 send_json_response(['success' => false, 'message' => 'فشل إضافة الحقيقة.']);
             }
+        }
+        break;
+
+    case 'delete_fact':
+        if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
+            send_json_response(['success' => false, 'message' => 'رمز CSRF غير صالح.']);
+            break;
+        }
+        $fact_id = (int)sanitize_input($_POST['id'] ?? 0); // Assuming 'id' is sent from confirmDelete
+
+        if ($fact_id <= 0) {
+            send_json_response(['success' => false, 'message' => 'معرف الحقيقة غير صالح.']);
+            break;
+        }
+
+        if ($db->execute("DELETE FROM facts WHERE id = :id", [':id' => $fact_id])) {
+            send_json_response(['success' => true, 'message' => 'تم حذف الحقيقة بنجاح.']);
+        } else {
+            send_json_response(['success' => false, 'message' => 'فشل حذف الحقيقة.']);
         }
         break;
 
@@ -281,7 +316,8 @@ switch ($action) {
             break;
         }
         $testimonial_id = (int)$_GET['id'];
-        $testimonial = $db->queryOne("SELECT * FROM testimonials WHERE testimonial_id = :id", [':id' => $testimonial_id]);
+        // Use new schema fields: id, author_name, testimonial_text, author_image_url
+        $testimonial = $db->queryOne("SELECT id, author_name, testimonial_text, author_image_url FROM testimonials WHERE id = :id", [':id' => $testimonial_id]);
         if ($testimonial) {
             send_json_response(['success' => true, 'testimonial' => $testimonial]);
         } else {
@@ -294,69 +330,84 @@ switch ($action) {
             send_json_response(['success' => false, 'message' => 'رمز CSRF غير صالح.']);
             break;
         }
-        $testimonial_id = (int)sanitize_input($_POST['testimonial_id'] ?? 0);
+        $testimonial_id = (int)sanitize_input($_POST['testimonial_id'] ?? 0); // Renamed from testimonial_id_field for clarity
+
+        // New schema fields
+        $author_name = sanitize_input($_POST['author_name'] ?? '');
+        $testimonial_text = sanitize_input($_POST['feedback'] ?? ''); // 'feedback' from form maps to 'testimonial_text'
+
         $data = [
-            'client_name' => sanitize_input($_POST['client_name'] ?? ''),
-            'client_title_company' => sanitize_input($_POST['client_title_company'] ?? null),
-            'feedback' => sanitize_input($_POST['feedback'] ?? ''),
-            'rating' => empty($_POST['rating']) ? null : (int)sanitize_input($_POST['rating']),
-            'order' => (int)sanitize_input($_POST['order'] ?? 0),
-            'is_approved' => isset($_POST['is_approved']) ? 1 : 0,
+            'author_name' => $author_name,
+            'testimonial_text' => $testimonial_text,
         ];
 
-        if (empty($data['client_name']) || empty($data['feedback'])) {
-             send_json_response(['success' => false, 'message' => 'اسم العميل ونص الرأي مطلوبان.']);
+        if (empty($data['author_name']) || empty($data['testimonial_text'])) {
+             send_json_response(['success' => false, 'message' => 'اسم المؤلف ونص الرأي مطلوبان.']);
             break;
         }
 
-        $existing_client_photo = sanitize_input($_POST['existing_client_photo'] ?? null);
-        if (isset($_FILES['client_photo']) && $_FILES['client_photo']['error'] === UPLOAD_ERR_OK) {
-            if ($testimonial_id > 0 && !empty($existing_client_photo)) {
-                 $old_testimonial = $db->queryOne("SELECT client_photo FROM testimonials WHERE testimonial_id = :id", [':id' => $testimonial_id]);
-                 if ($old_testimonial && !empty($old_testimonial['client_photo'])) { // Check if not empty
-                    delete_uploaded_file($old_testimonial['client_photo']);
-                 }
+        // Handle image upload for author_image_url
+        $current_image_path = null;
+        if ($testimonial_id > 0) {
+            $old_testimonial = $db->queryOne("SELECT author_image_url FROM testimonials WHERE id = :id", [':id' => $testimonial_id]);
+            if ($old_testimonial) {
+                $current_image_path = $old_testimonial['author_image_url'];
             }
-            $uploaded_path = handle_file_upload($_FILES['client_photo'], 'testimonials');
+        }
+
+        if (isset($_POST['remove_author_image']) && $_POST['remove_author_image'] == '1' && !empty($current_image_path)) {
+            delete_uploaded_file($current_image_path);
+            $data['author_image_url'] = null;
+        } elseif (isset($_FILES['author_image_file']) && $_FILES['author_image_file']['error'] === UPLOAD_ERR_OK) {
+            if (!empty($current_image_path)) {
+                delete_uploaded_file($current_image_path); // Delete old image if new one is uploaded
+            }
+            $uploaded_path = handle_file_upload($_FILES['author_image_file'], 'testimonials'); // 'testimonials' is the subfolder
             if ($uploaded_path) {
-                $data['client_photo'] = $uploaded_path;
+                $data['author_image_url'] = $uploaded_path;
             } else {
-                send_json_response(['success' => false, 'message' => 'فشل رفع صورة العميل.']);
+                send_json_response(['success' => false, 'message' => 'فشل رفع صورة المؤلف.']);
                 break;
             }
-        } elseif (isset($_POST['remove_client_photo']) && $_POST['remove_client_photo'] == '1' && $testimonial_id > 0) {
-             $old_testimonial = $db->queryOne("SELECT client_photo FROM testimonials WHERE testimonial_id = :id", [':id' => $testimonial_id]);
-             if ($old_testimonial && !empty($old_testimonial['client_photo'])) {
-                delete_uploaded_file($old_testimonial['client_photo']);
-             }
-            $data['client_photo'] = null;
-        } elseif ($testimonial_id > 0 && !empty($existing_client_photo) && (!isset($_POST['remove_client_photo']) || $_POST['remove_client_photo'] != '1')) {
-            $data['client_photo'] = $existing_client_photo;
+        } else {
+            // If no new image and no removal, keep existing image path
+            // This key should only be added if an update to the path is intended.
+            // If it's not in $data, it won't be part of the SQL SET clause for UPDATE unless explicitly handled.
+            if ($testimonial_id > 0 && $current_image_path !== null) {
+                 $data['author_image_url'] = $current_image_path; // Ensure existing image is kept if not changed/removed
+            } else if ($testimonial_id == 0) { // For new testimonial, if no image, set to null
+                 $data['author_image_url'] = null;
+            }
         }
 
 
         if ($testimonial_id > 0) { // Update
-            $data['updated_at'] = date('Y-m-d H:i:s');
+            $data['updated_at'] = date('Y-m-d H:i:s'); // Handled by DB NOW() in new query
             $set_clauses = [];
-            $params_update = [];
+            $params_update = [':id' => $testimonial_id];
             foreach ($data as $key => $value) {
-                $set_clauses[] = "`$key` = :$key"; // Add backticks for 'order'
+                if ($key === 'author_image_url' && $value === $current_image_path && !isset($_FILES['author_image_file']) && !(isset($_POST['remove_author_image']) && $_POST['remove_author_image'] == '1') ) {
+                    continue; // Skip updating image_url if it hasn't changed
+                }
+                $set_clauses[] = "$key = :$key";
                 $params_update[":$key"] = $value;
             }
-            $params_update[':testimonial_id_condition'] = $testimonial_id;
 
-            $sql = "UPDATE testimonials SET " . implode(', ', $set_clauses) . " WHERE testimonial_id = :testimonial_id_condition";
+            if(empty($set_clauses)){ // Nothing to update except potentially updated_at
+                 send_json_response(['success' => true, 'message' => 'لم يتم تغيير أي بيانات.']);
+                 break;
+            }
+
+            $sql = "UPDATE testimonials SET " . implode(', ', $set_clauses) . ", updated_at = NOW() WHERE id = :id";
             if ($db->execute($sql, $params_update)) {
                 send_json_response(['success' => true, 'message' => 'تم تحديث الرأي بنجاح.']);
             } else {
                 send_json_response(['success' => false, 'message' => 'فشل تحديث الرأي.']);
             }
         } else { // Insert
-            $data['created_at'] = date('Y-m-d H:i:s');
-            $data['updated_at'] = date('Y-m-d H:i:s');
-            $columns = implode(', ', array_map(function($key) { return "`$key`"; }, array_keys($data)));
-            $placeholders = ':' . implode(', :', array_keys($data));
-            $sql = "INSERT INTO testimonials ($columns) VALUES ($placeholders)";
+            // created_at and updated_at handled by NOW()
+            $sql = "INSERT INTO testimonials (author_name, testimonial_text, author_image_url, created_at, updated_at)
+                    VALUES (:author_name, :testimonial_text, :author_image_url, NOW(), NOW())";
             if ($db->execute($sql, $data)) {
                 send_json_response(['success' => true, 'message' => 'تم إضافة الرأي بنجاح.', 'new_id' => $db->lastInsertId()]);
             } else {
@@ -365,30 +416,40 @@ switch ($action) {
         }
         break;
 
-    case 'toggle_testimonial_approval':
+    // toggle_testimonial_approval case block removed
+
+    case 'delete_testimonial':
         if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
             send_json_response(['success' => false, 'message' => 'رمز CSRF غير صالح.']);
             break;
         }
-        $testimonial_id = (int)sanitize_input($_POST['testimonial_id'] ?? 0);
-        if ($testimonial_id > 0) {
-            $current = $db->queryOne("SELECT is_approved FROM testimonials WHERE testimonial_id = :id", [':id' => $testimonial_id]);
-            if ($current) {
-                $new_status = $current['is_approved'] ? 0 : 1;
-                if ($db->execute("UPDATE testimonials SET is_approved = :status, updated_at = NOW() WHERE testimonial_id = :id", [':status' => $new_status, ':id' => $testimonial_id])) {
-                    send_json_response(['success' => true, 'message' => 'تم تحديث حالة الموافقة.', 'new_status' => $new_status]);
-                } else {
-                    send_json_response(['success' => false, 'message' => 'فشل تحديث حالة الموافقة.']);
-                }
-            } else {
-                send_json_response(['success' => false, 'message' => 'الرأي غير موجود.']);
-            }
-        } else {
+        $testimonial_id = (int)sanitize_input($_POST['id'] ?? 0); // Assuming 'id' is sent from confirmDelete
+
+        if ($testimonial_id <= 0) {
             send_json_response(['success' => false, 'message' => 'معرف الرأي غير صالح.']);
+            break;
+        }
+
+        // Fetch author_image_url before deleting the record
+        $testimonial = $db->queryOne("SELECT author_image_url FROM testimonials WHERE id = :id", [':id' => $testimonial_id]);
+
+        if (!$testimonial) {
+            send_json_response(['success' => false, 'message' => 'الرأي غير موجود.']);
+            break;
+        }
+
+        if ($db->execute("DELETE FROM testimonials WHERE id = :id", [':id' => $testimonial_id])) {
+            // If record deletion is successful, delete the image file if it exists
+            if ($testimonial && !empty($testimonial['author_image_url'])) {
+                delete_uploaded_file($testimonial['author_image_url']);
+            }
+            send_json_response(['success' => true, 'message' => 'تم حذف الرأي بنجاح.']);
+        } else {
+            send_json_response(['success' => false, 'message' => 'فشل حذف الرأي.']);
         }
         break;
 
-    case 'submit_testimonial': // Public submission
+    case 'submit_testimonial': // Public submission - this should be reviewed for new schema if used publicly
          if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
             send_json_response(['success' => false, 'message' => 'محاولة غير صالحة.']);
             break;
@@ -422,88 +483,103 @@ switch ($action) {
             send_json_response(['success' => false, 'message' => 'رمز CSRF غير صالح.']);
             break;
         }
-        $data = [];
-        $allowed_fields = [
-            'site_name', 'site_tagline', 'site_description', 'meta_keywords',
-            'contact_phone', 'contact_email', 'contact_address',
-            'whatsapp_link', 'instagram_link', 'twitter_link', 'facebook_link',
-            'footer_text', 'map_location_name', 'map_lat', 'map_lng', 'map_api_key',
-            'google_analytics_id', 'google_tag_manager_id', 'facebook_pixel_id'
-        ];
-        foreach($allowed_fields as $field) {
-            if (isset($_POST[$field])) {
-                 // footer_text might be HTML from TinyMCE, handle sanitization accordingly if it's not already done client-side or if strict sanitization is needed.
-                $data[$field] = ($_POST[$field] === 'footer_text' && !is_array($_POST[$field])) ? $_POST[$field] : sanitize_input($_POST[$field]);
-            }
-        }
-        if (isset($_POST['enabled_frontend_sections']) && is_array($_POST['enabled_frontend_sections'])) {
-            // Sanitize keys and values if necessary
-            $sanitized_sections = [];
-            foreach($_POST['enabled_frontend_sections'] as $key => $value) {
-                $sanitized_sections[sanitize_input($key)] = (bool)$value;
-            }
-            $data['enabled_frontend_sections'] = json_encode($sanitized_sections);
-        } else {
-            $data['enabled_frontend_sections'] = json_encode([]);
-        }
 
-        $file_fields = ['site_logo' => 'site_logo_path', 'site_favicon' => 'site_favicon_path', 'og_image' => 'og_image_path'];
-        $current_settings = $db->queryOne("SELECT site_logo_path, site_favicon_path, og_image_path FROM settings WHERE setting_id = 1");
+        global $db;
+        $pdo = $db->getPdo();
+        $pdo->beginTransaction();
 
-        foreach ($file_fields as $input_name => $db_column) {
-            if (isset($_POST['remove_' . $input_name]) && $_POST['remove_' . $input_name] == '1' && $current_settings && !empty($current_settings[$db_column])) {
-                delete_uploaded_file($current_settings[$db_column]);
-                $data[$db_column] = null;
-            }
-            if (isset($_FILES[$input_name]) && $_FILES[$input_name]['error'] === UPLOAD_ERR_OK) {
-                if ($current_settings && !empty($current_settings[$db_column])) {
-                    delete_uploaded_file($current_settings[$db_column]);
+        try {
+            $sql_upsert = "INSERT INTO settings (setting_name, setting_value, created_at, updated_at)
+                           VALUES (:setting_name, :setting_value, NOW(), NOW())
+                           ON DUPLICATE KEY UPDATE setting_value = :setting_value, updated_at = NOW()";
+
+            // Handle text-based settings
+            foreach ($_POST as $key => $value) {
+                if (in_array($key, ['action', CSRF_TOKEN_NAME]) || strpos($key, 'remove_') === 0) {
+                    continue; // Skip non-setting fields and removal checkboxes (handled separately)
                 }
-                $uploaded_path = handle_file_upload($_FILES[$input_name], 'site_assets');
-                if ($uploaded_path) {
-                    $data[$db_column] = $uploaded_path;
+
+                $setting_name = sanitize_input($key);
+                $setting_value = $value; // Value already sanitized or HTML content
+
+                if ($setting_name === 'enabled_frontend_sections') {
+                    if (is_array($value)) {
+                        $sanitized_sections = [];
+                        foreach ($value as $section_key => $section_status) {
+                            $sanitized_sections[sanitize_input($section_key)] = (bool)$section_status;
+                        }
+                        $setting_value = json_encode($sanitized_sections);
+                    } else {
+                        $setting_value = json_encode([]); // Default to empty if not an array
+                    }
+                } elseif ($setting_name === 'footer_text') {
+                    // Assuming TinyMCE provides HTML, no further server-side sanitization here
+                    // to preserve formatting. Client-side sanitization or purifier if needed.
                 } else {
-                    send_json_response(['success' => false, 'message' => "فشل رفع ملف $input_name."]);
-                    return;
+                     if (is_array($value)) {
+                        // If for some reason other fields could be arrays and need special handling:
+                        // $setting_value = json_encode(array_map('sanitize_input', $value));
+                        // For now, assume other array values are not expected for simple settings.
+                        // If they are, this part might need adjustment.
+                        // For this specific form, only enabled_frontend_sections is an array.
+                        log_error("Unexpected array value for setting: $setting_name");
+                        continue; // Skip this field
+                    } else {
+                        $setting_value = sanitize_input($value);
+                    }
+                }
+
+                $db->execute($sql_upsert, [':setting_name' => $setting_name, ':setting_value' => $setting_value]);
+            }
+
+            // Handle file uploads
+            $file_fields_map = [
+                'site_logo' => 'site_logo_path',
+                'site_favicon' => 'site_favicon_path',
+                'og_image' => 'og_image_path'
+            ];
+
+            foreach ($file_fields_map as $input_name => $setting_name_for_path) {
+                // Check for file removal
+                if (isset($_POST['remove_' . $input_name]) && $_POST['remove_' . $input_name] == '1') {
+                    $current_path_row = $db->queryOne("SELECT setting_value FROM settings WHERE setting_name = :setting_name", [':setting_name' => $setting_name_for_path]);
+                    if ($current_path_row && !empty($current_path_row['setting_value'])) {
+                        delete_uploaded_file($current_path_row['setting_value']);
+                    }
+                    $db->execute($sql_upsert, [':setting_name' => $setting_name_for_path, ':setting_value' => null]);
+                }
+
+                // Check for new file upload
+                if (isset($_FILES[$input_name]) && $_FILES[$input_name]['error'] === UPLOAD_ERR_OK) {
+                    // Delete old file if it exists
+                    $old_path_row = $db->queryOne("SELECT setting_value FROM settings WHERE setting_name = :setting_name", [':setting_name' => $setting_name_for_path]);
+                    if ($old_path_row && !empty($old_path_row['setting_value'])) {
+                        delete_uploaded_file($old_path_row['setting_value']);
+                    }
+
+                    // Upload new file
+                    // Assuming handle_file_upload returns path relative to UPLOAD_DIR or similar base
+                    // And that UPLOAD_DIR is inside project root and web accessible.
+                    // The path stored should be relative to a web accessible root if UPLOAD_URL is used for display.
+                    // E.g., if UPLOAD_URL is 'uploads/', and files are in 'project_root/public/uploads/',
+                    // then handle_file_upload should return 'category/filename.ext'
+                    // and this is stored in DB.
+                    $uploaded_relative_path = handle_file_upload($_FILES[$input_name], 'site_assets');
+                    if ($uploaded_relative_path) {
+                        $db->execute($sql_upsert, [':setting_name' => $setting_name_for_path, ':setting_value' => $uploaded_relative_path]);
+                    } else {
+                        throw new Exception("فشل رفع ملف $input_name.");
+                    }
                 }
             }
-        }
 
-        if (empty($data) && empty(array_filter($_FILES))) { // Check if any file was uploaded too
-            send_json_response(['success' => true, 'message' => 'لا توجد بيانات لتحديثها.']);
-            break;
-        }
+            $pdo->commit();
+            send_json_response(['success' => true, 'message' => 'تم حفظ إعدادات الموقع بنجاح.']);
 
-        $setting_exists = $db->queryOne("SELECT setting_id FROM settings WHERE setting_id = 1");
-
-        if ($setting_exists) {
-            if (!empty($data)) { // Only update if there's data to update
-                $set_clauses = [];
-                $params_update = [];
-                foreach ($data as $key => $value) {
-                    $set_clauses[] = "`$key` = :$key";
-                     $params_update[":$key"] = $value;
-                }
-                $params_update[':setting_id'] = 1;
-                $sql = "UPDATE settings SET " . implode(', ', $set_clauses) . " WHERE setting_id = :setting_id";
-                if ($db->execute($sql, $params_update)) {
-                    send_json_response(['success' => true, 'message' => 'تم حفظ إعدادات الموقع.']);
-                } else {
-                    send_json_response(['success' => false, 'message' => 'فشل حفظ إعدادات الموقع.']);
-                }
-            } else {
-                 send_json_response(['success' => true, 'message' => 'تم حفظ إعدادات الموقع (لم يتم تغيير أي بيانات نصية ولكن ربما تم تحديث الملفات).']);
-            }
-        } else {
-            $data['setting_id'] = 1;
-            $columns = implode(', ', array_map(function($key) { return "`$key`"; }, array_keys($data)));
-            $placeholders = ':' . implode(', :', array_keys($data));
-            $sql = "INSERT INTO settings ($columns) VALUES ($placeholders)";
-            if ($db->execute($sql, $data)) {
-                send_json_response(['success' => true, 'message' => 'تم حفظ إعدادات الموقع.']);
-            } else {
-                send_json_response(['success' => false, 'message' => 'فشل حفظ إعدادات الموقع.']);
-            }
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            log_error("Failed to save site settings: " . $e->getMessage());
+            send_json_response(['success' => false, 'message' => 'فشل حفظ إعدادات الموقع: ' . $e->getMessage()]);
         }
         break;
 

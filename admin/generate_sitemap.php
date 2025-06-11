@@ -22,76 +22,85 @@ if (defined('PROJECT_ROOT')) {
 check_admin_login();
 
 // تحديد مسار ملف خريطة الموقع
-$sitemap_path = BASE_PATH . '/sitemap.xml';
+$sitemap_path = PROJECT_ROOT . '/sitemap.xml'; // Use PROJECT_ROOT
+
+// Define default settings
+$default_sitemap_settings = [
+    'sitemap_auto_generate' => 0,
+    'sitemap_frequency' => 'weekly',
+    'sitemap_include_images' => 0,
+    'sitemap_priority_home' => 1.0,
+    'sitemap_priority_services' => 0.8,
+    'sitemap_priority_projects' => 0.8,
+    'sitemap_last_generated' => null
+];
+
+// Function to save a single setting
+function save_single_setting($setting_name, $setting_value) {
+    global $db;
+    $sql = "INSERT INTO settings (setting_name, setting_value, created_at, updated_at)
+            VALUES (:setting_name, :setting_value, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE setting_value = :setting_value, updated_at = NOW()";
+    return $db->execute($sql, [':setting_name' => $setting_name, ':setting_value' => $setting_value]);
+}
 
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
-    switch ($action) {
-        case 'generate_sitemap':
-            $result = generate_sitemap();
-            
-            if ($result) {
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'generate_sitemap', 'sitemap', null);
+    if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
+        $error_message = "خطأ في التحقق (CSRF).";
+    } else {
+        switch ($action) {
+            case 'generate_sitemap':
+                $result = generate_sitemap(); // This function will also update sitemap_last_generated
+                if ($result) {
+                    $success_message = "تم توليد خريطة الموقع بنجاح";
+                } else {
+                    $error_message = "حدث خطأ أثناء توليد خريطة الموقع";
+                }
+                break;
                 
-                $success_message = "تم توليد خريطة الموقع بنجاح";
-            } else {
-                $error_message = "حدث خطأ أثناء توليد خريطة الموقع";
-            }
-            break;
-            
-        case 'update_settings':
-            $auto_generate = isset($_POST['auto_generate']) ? 1 : 0;
-            $frequency = $_POST['frequency'] ?? 'weekly';
-            $include_images = isset($_POST['include_images']) ? 1 : 0;
-            $priority_home = (float)$_POST['priority_home'];
-            $priority_services = (float)$_POST['priority_services'];
-            $priority_projects = (float)$_POST['priority_projects'];
-            
-            // تحديث الإعدادات في قاعدة البيانات
-            $sql_update_settings = "UPDATE site_settings SET
-                                        sitemap_auto_generate = :sitemap_auto_generate,
-                                        sitemap_frequency = :sitemap_frequency,
-                                        sitemap_include_images = :sitemap_include_images,
-                                        sitemap_priority_home = :sitemap_priority_home,
-                                        sitemap_priority_services = :sitemap_priority_services,
-                                        sitemap_priority_projects = :sitemap_priority_projects
-                                    WHERE id = 1";
-            $params_update = [
-                ':sitemap_auto_generate' => $auto_generate,
-                ':sitemap_frequency' => $frequency,
-                ':sitemap_include_images' => $include_images,
-                ':sitemap_priority_home' => $priority_home,
-                ':sitemap_priority_services' => $priority_services,
-                ':sitemap_priority_projects' => $priority_projects
-            ];
-            if ($db->execute($sql_update_settings, $params_update)) {
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'update_sitemap_settings', 'site_settings', 1);
-                $success_message = "تم تحديث إعدادات خريطة الموقع بنجاح";
-            } else {
-                $error_message = "فشل تحديث إعدادات خريطة الموقع.";
-            }
-            break;
+            case 'update_settings':
+                $settings_to_update = [
+                    'sitemap_auto_generate' => isset($_POST['sitemap_auto_generate']) ? 1 : 0,
+                    'sitemap_frequency' => $_POST['sitemap_frequency'] ?? 'weekly',
+                    'sitemap_include_images' => isset($_POST['sitemap_include_images']) ? 1 : 0,
+                    'sitemap_priority_home' => (float)($_POST['sitemap_priority_home'] ?? 1.0),
+                    'sitemap_priority_services' => (float)($_POST['sitemap_priority_services'] ?? 0.8),
+                    'sitemap_priority_projects' => (float)($_POST['sitemap_priority_projects'] ?? 0.8)
+                ];
+
+                $all_saved = true;
+                foreach($settings_to_update as $key => $value) {
+                    if (!save_single_setting($key, $value)) {
+                        $all_saved = false;
+                        break;
+                    }
+                }
+
+                if ($all_saved) {
+                    $success_message = "تم تحديث إعدادات خريطة الموقع بنجاح";
+                } else {
+                    $error_message = "فشل تحديث بعض إعدادات خريطة الموقع.";
+                }
+                break;
+        }
     }
 }
 
-// الحصول على إعدادات خريطة الموقع
-$settings_query_sql = "SELECT
-    sitemap_auto_generate, 
-    sitemap_frequency, 
-    sitemap_include_images,
-    sitemap_priority_home,
-    sitemap_priority_services,
-    sitemap_priority_projects,
-    sitemap_last_generated
-FROM site_settings WHERE id = 1";
-$settings = $db->queryOne($settings_query_sql);
+// الحصول على إعدادات خريطة الموقع من جدول settings (key-value)
+$settings_from_db = $db->query("SELECT setting_name, setting_value FROM settings WHERE setting_name LIKE 'sitemap_%'");
+$current_settings = [];
+foreach ($settings_from_db as $row) {
+    $current_settings[$row['setting_name']] = $row['setting_value'];
+}
+// Merge with defaults to ensure all keys are present
+$settings = array_merge($default_sitemap_settings, $current_settings);
+
 
 // التحقق من وجود ملف خريطة الموقع
-$sitemap_exists = file_exists($sitemap_path);
+$sitemap_path = PROJECT_ROOT . '/sitemap.xml'; // Use PROJECT_ROOT
 $sitemap_size = $sitemap_exists ? filesize($sitemap_path) : 0;
 $sitemap_url = $sitemap_exists ? SITE_URL . '/sitemap.xml' : '';
 
@@ -295,22 +304,21 @@ document.addEventListener('DOMContentLoaded', function() {
 <?php
 // دالة لتوليد خريطة الموقع
 function generate_sitemap() {
-    global $db, $sitemap_path;
+    global $db, $sitemap_path, $default_sitemap_settings; // Ensure $default_sitemap_settings is accessible or passed
     
     try {
-        // الحصول على إعدادات خريطة الموقع
-        $settings_sitemap_sql = "SELECT
-            sitemap_include_images,
-            sitemap_priority_home,
-            sitemap_priority_services,
-            sitemap_priority_projects
-        FROM site_settings WHERE id = 1";
-        $settings = $db->queryOne($settings_sitemap_sql);
-        
-        $include_images = $settings['sitemap_include_images'] ?? 0;
-        $priority_home = $settings['sitemap_priority_home'] ?? 1.0;
-        $priority_services = $settings['sitemap_priority_services'] ?? 0.8;
-        $priority_projects = $settings['sitemap_priority_projects'] ?? 0.8;
+        // الحصول على إعدادات خريطة الموقع من جدول settings (key-value)
+        $settings_from_db = $db->query("SELECT setting_name, setting_value FROM settings WHERE setting_name LIKE 'sitemap_%'");
+        $current_sitemap_settings = [];
+        foreach ($settings_from_db as $row) {
+            $current_sitemap_settings[$row['setting_name']] = $row['setting_value'];
+        }
+        $sitemap_config = array_merge($default_sitemap_settings, $current_sitemap_settings);
+
+        $include_images = (bool)($sitemap_config['sitemap_include_images'] ?? 0);
+        $priority_home = (float)($sitemap_config['sitemap_priority_home'] ?? 1.0);
+        $priority_services = (float)($sitemap_config['sitemap_priority_services'] ?? 0.8);
+        $priority_projects = (float)($sitemap_config['sitemap_priority_projects'] ?? 0.8);
         
         // بدء ملف XML
         $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
@@ -330,81 +338,38 @@ function generate_sitemap() {
         $xml .= '    <priority>' . $priority_home . '</priority>' . "\n";
         $xml .= '  </url>' . "\n";
         
-        // إضافة صفحات الخدمات
-        $services = $db->query("SELECT id, slug, updated_at FROM services WHERE is_active = 1");
+        // إضافة صفحات الخدمات - no is_active filter, no slug, no service_images
+        $services = $db->query("SELECT id, updated_at FROM services ORDER BY updated_at DESC");
         if ($services) {
             foreach ($services as $service) {
                 $xml .= '  <url>' . "\n";
-                $xml .= '    <loc>' . SITE_URL . '/service-details.php?slug=' . $service['slug'] . '</loc>' . "\n";
+                $xml .= '    <loc>' . SITE_URL . '/service-details.php?id=' . $service['id'] . '</loc>' . "\n"; // Use id
                 $xml .= '    <lastmod>' . date('Y-m-d', strtotime($service['updated_at'])) . '</lastmod>' . "\n";
                 $xml .= '    <changefreq>weekly</changefreq>' . "\n";
                 $xml .= '    <priority>' . $priority_services . '</priority>' . "\n";
-                
-                // إضافة الصور إذا كان مطلوباً
-                if ($include_images) {
-                    // الصورة الرئيسية
-                    $main_image = $db->queryOne("SELECT image_path, alt_text FROM service_images WHERE service_id = :service_id AND is_main = 1", [':service_id' => $service['id']]);
-                    if ($main_image) {
-                        $xml .= '    <image:image>' . "\n";
-                        $xml .= '      <image:loc>' . SITE_URL . '/' . $main_image['image_path'] . '</image:loc>' . "\n";
-                        if ($main_image['alt_text']) {
-                            $xml .= '      <image:title>' . htmlspecialchars($main_image['alt_text']) . '</image:title>' . "\n";
-                        }
-                        $xml .= '    </image:image>' . "\n";
-                    }
-
-                    // الصور الإضافية
-                    $images = $db->query("SELECT image_path, alt_text FROM service_images WHERE service_id = :service_id AND is_main = 0", [':service_id' => $service['id']]);
-                    if($images){
-                        foreach ($images as $image) {
-                            $xml .= '    <image:image>' . "\n";
-                            $xml .= '      <image:loc>' . SITE_URL . '/' . $image['image_path'] . '</image:loc>' . "\n";
-                            if ($image['alt_text']) {
-                                $xml .= '      <image:title>' . htmlspecialchars($image['alt_text']) . '</image:title>' . "\n";
-                            }
-                            $xml .= '    </image:image>' . "\n";
-                        }
-                    }
-                }
+                // Service images removed
                 $xml .= '  </url>' . "\n";
             }
         }
         
-        // إضافة صفحات المشاريع
-        $projects = $db->query("SELECT id, slug, updated_at FROM projects WHERE is_active = 1");
+        // إضافة صفحات المشاريع - no is_active filter, no slug, use project.image_url
+        $projects = $db->query("SELECT id, image_url, updated_at FROM projects ORDER BY updated_at DESC");
         if ($projects) {
             foreach ($projects as $project) {
                 $xml .= '  <url>' . "\n";
-                $xml .= '    <loc>' . SITE_URL . '/project-details.php?slug=' . $project['slug'] . '</loc>' . "\n";
+                $xml .= '    <loc>' . SITE_URL . '/project-details.php?id=' . $project['id'] . '</loc>' . "\n"; // Use id
                 $xml .= '    <lastmod>' . date('Y-m-d', strtotime($project['updated_at'])) . '</lastmod>' . "\n";
                 $xml .= '    <changefreq>weekly</changefreq>' . "\n";
                 $xml .= '    <priority>' . $priority_projects . '</priority>' . "\n";
                 
-                // إضافة الصور إذا كان مطلوباً
-                if ($include_images) {
-                    // الصورة الرئيسية
-                    $main_image = $db->queryOne("SELECT image_path, alt_text FROM project_images WHERE project_id = :project_id AND is_main = 1", [':project_id' => $project['id']]);
-                    if ($main_image) {
-                        $xml .= '    <image:image>' . "\n";
-                        $xml .= '      <image:loc>' . SITE_URL . '/' . $main_image['image_path'] . '</image:loc>' . "\n";
-                        if ($main_image['alt_text']) {
-                            $xml .= '      <image:title>' . htmlspecialchars($main_image['alt_text']) . '</image:title>' . "\n";
-                        }
-                        $xml .= '    </image:image>' . "\n";
-                    }
-
-                    // الصور الإضافية
-                    $images = $db->query("SELECT image_path, alt_text FROM project_images WHERE project_id = :project_id AND is_main = 0", [':project_id' => $project['id']]);
-                    if($images){
-                        foreach ($images as $image) {
-                            $xml .= '    <image:image>' . "\n";
-                            $xml .= '      <image:loc>' . SITE_URL . '/' . $image['image_path'] . '</image:loc>' . "\n";
-                            if ($image['alt_text']) {
-                                $xml .= '      <image:title>' . htmlspecialchars($image['alt_text']) . '</image:title>' . "\n";
-                            }
-                            $xml .= '    </image:image>' . "\n";
-                        }
-                    }
+                if ($include_images && !empty($project['image_url'])) {
+                    $xml .= '    <image:image>' . "\n";
+                    // Assuming UPLOAD_URL is the relative path like 'uploads/' and image_url is 'projects/image.jpg'
+                    // And SITE_URL is like 'https://example.com'
+                    $xml .= '      <image:loc>' . SITE_URL . (defined('UPLOAD_URL') ? UPLOAD_URL : 'uploads/') . htmlspecialchars($project['image_url']) . '</image:loc>' . "\n";
+                    // Add <image:title> if you have a title/alt for the project image_url
+                    // $xml .= '      <image:title>' . htmlspecialchars($project['title']) . '</image:title>' . "\n";
+                    $xml .= '    </image:image>' . "\n";
                 }
                 $xml .= '  </url>' . "\n";
             }
@@ -433,8 +398,8 @@ function generate_sitemap() {
         // حفظ الملف
         file_put_contents($sitemap_path, $xml);
         
-        // تحديث تاريخ آخر توليد
-        $db->execute("UPDATE site_settings SET sitemap_last_generated = NOW() WHERE id = 1");
+        // تحديث تاريخ آخر توليد في جدول settings
+        save_single_setting('sitemap_last_generated', date('Y-m-d H:i:s'));
         
         return true;
     } catch (Exception $e) {

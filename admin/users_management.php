@@ -53,9 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $email = trim($_POST['email']);
             $password = $_POST['password'];
             $confirm_password = $_POST['confirm_password'];
-            $full_name = trim($_POST['full_name']);
             $role = $_POST['role'];
-            $is_active = isset($_POST['is_active']) ? 1 : 0;
             
             // التحقق من البيانات
             $errors = [];
@@ -92,10 +90,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errors[] = "كلمة المرور وتأكيدها غير متطابقين";
             }
             
-            if (empty($full_name)) {
-                $errors[] = "الاسم الكامل مطلوب";
-            }
-            
             if (empty($role)) {
                 $errors[] = "الدور مطلوب";
             }
@@ -105,15 +99,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hashed_password = password_hash($password, PASSWORD_DEFAULT);
                 
                 // إضافة المستخدم
-                $sql_insert_user = "INSERT INTO users (username, email, password, full_name, role, is_active, created_at)
-                                    VALUES (:username, :email, :password, :full_name, :role, :is_active, NOW())";
+                $sql_insert_user = "INSERT INTO users (username, email, password_hash, role, created_at, updated_at)
+                                    VALUES (:username, :email, :password_hash, :role, NOW(), NOW())";
                 $params_insert = [
                     ':username' => $username,
                     ':email' => $email,
-                    ':password' => $hashed_password,
-                    ':full_name' => $full_name,
-                    ':role' => $role,
-                    ':is_active' => $is_active
+                    ':password_hash' => $hashed_password,
+                    ':role' => $role
                 ];
                 if ($db->execute($sql_insert_user, $params_insert)) {
                     $user_id = $db->lastInsertId();
@@ -132,9 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'update_user':
             $user_id = (int)$_POST['user_id'];
             $email = trim($_POST['email']);
-            $full_name = trim($_POST['full_name']);
             $role = $_POST['role'];
-            $is_active = isset($_POST['is_active']) ? 1 : 0;
             $password = $_POST['password'];
             
             // التحقق من البيانات
@@ -152,10 +142,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
-            if (empty($full_name)) {
-                $errors[] = "الاسم الكامل مطلوب";
-            }
-            
             if (empty($role)) {
                 $errors[] = "الدور مطلوب";
             }
@@ -166,21 +152,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if (empty($errors)) {
                 // تحديث المستخدم
-                // تحديث المستخدم
-                $sql_update_user = "UPDATE users SET email = :email, full_name = :full_name, role = :role, is_active = :is_active, updated_at = NOW()";
+                $sql_update_user = "UPDATE users SET email = :email, role = :role, updated_at = NOW()";
                 $params_update = [
                     ':email' => $email,
-                    ':full_name' => $full_name,
                     ':role' => $role,
-                    ':is_active' => $is_active,
                     ':user_id' => $user_id
                 ];
 
                 if (!empty($password)) {
                     // تشفير كلمة المرور الجديدة
                     $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-                    $sql_update_user .= ", password = :password";
-                    $params_update[':password'] = $hashed_password;
+                    $sql_update_user .= ", password_hash = :password_hash";
+                    $params_update[':password_hash'] = $hashed_password;
                 }
                 $sql_update_user .= " WHERE id = :user_id";
                 
@@ -224,7 +207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // الحصول على المستخدمين
-$users = $db->query("SELECT * FROM users ORDER BY created_at DESC");
+$users = $db->query("SELECT id, username, email, role, created_at, updated_at FROM users ORDER BY created_at DESC");
 
 include 'includes/header.php';
 ?>
@@ -271,11 +254,9 @@ include 'includes/header.php';
                                     <tr>
                                         <th>اسم المستخدم</th>
                                         <th>البريد الإلكتروني</th>
-                                        <th>الاسم الكامل</th>
                                         <th>الدور</th>
-                                        <th>الحالة</th>
-                                        <th>آخر تسجيل دخول</th>
                                         <th>تاريخ الإنشاء</th>
+                                         <th>تاريخ التحديث</th>
                                         <th>الإجراءات</th>
                                     </tr>
                                 </thead>
@@ -284,7 +265,6 @@ include 'includes/header.php';
                                         <tr>
                                             <td><?php echo htmlspecialchars($user['username']); ?></td>
                                             <td><?php echo htmlspecialchars($user['email']); ?></td>
-                                            <td><?php echo htmlspecialchars($user['full_name']); ?></td>
                                             <td>
                                                 <?php if ($user['role'] === 'admin'): ?>
                                                     <span class="badge bg-danger">مدير</span>
@@ -294,21 +274,8 @@ include 'includes/header.php';
                                                     <span class="badge bg-secondary">مشاهد</span>
                                                 <?php endif; ?>
                                             </td>
-                                            <td>
-                                                <?php if ($user['is_active']): ?>
-                                                    <span class="badge bg-success">مفعل</span>
-                                                <?php else: ?>
-                                                    <span class="badge bg-danger">غير مفعل</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <?php if ($user['last_login']): ?>
-                                                    <?php echo date('Y-m-d H:i', strtotime($user['last_login'])); ?>
-                                                <?php else: ?>
-                                                    <span class="text-muted">لم يسجل الدخول بعد</span>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td><?php echo date('Y-m-d', strtotime($user['created_at'])); ?></td>
+                                             <td><?php echo date('Y-m-d H:i', strtotime($user['created_at'])); ?></td>
+                                             <td><?php echo date('Y-m-d H:i', strtotime($user['updated_at'])); ?></td>
                                             <td>
                                                 <div class="btn-group btn-group-sm" role="group">
                                                     <button type="button" class="btn btn-outline-primary" 
@@ -370,22 +337,12 @@ include 'includes/header.php';
                     </div>
                     
                     <div class="mb-3">
-                        <label for="full_name" class="form-label">الاسم الكامل</label>
-                        <input type="text" name="full_name" id="full_name" class="form-control" required>
-                    </div>
-                    
-                    <div class="mb-3">
                         <label for="role" class="form-label">الدور</label>
                         <select name="role" id="role" class="form-select" required>
                             <option value="admin">مدير</option>
                             <option value="editor" selected>محرر</option>
                             <option value="viewer">مشاهد</option>
                         </select>
-                    </div>
-                    
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="is_active" checked>
-                        <label class="form-check-label" for="is_active">مفعل</label>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -427,22 +384,12 @@ include 'includes/header.php';
                     </div>
                     
                     <div class="mb-3">
-                        <label for="edit_full_name" class="form-label">الاسم الكامل</label>
-                        <input type="text" name="full_name" id="edit_full_name" class="form-control" required>
-                    </div>
-                    
-                    <div class="mb-3">
                         <label for="edit_role" class="form-label">الدور</label>
                         <select name="role" id="edit_role" class="form-select" required>
                             <option value="admin">مدير</option>
                             <option value="editor">محرر</option>
                             <option value="viewer">مشاهد</option>
                         </select>
-                    </div>
-                    
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="edit_is_active">
-                        <label class="form-check-label" for="edit_is_active">مفعل</label>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -465,9 +412,7 @@ function editUser(userId) {
         document.getElementById('edit_username').value = user.username;
         document.getElementById('edit_email').value = user.email;
         document.getElementById('edit_password').value = '';
-        document.getElementById('edit_full_name').value = user.full_name;
         document.getElementById('edit_role').value = user.role;
-        document.getElementById('edit_is_active').checked = user.is_active == 1;
         
         new bootstrap.Modal(document.getElementById('editUserModal')).show();
     }

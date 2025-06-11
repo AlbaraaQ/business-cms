@@ -367,4 +367,45 @@ function create_project_link($slug) {
     return create_page_link('project-details.php', ['slug' => $slug]);
 }
 
+/**
+ * Get SEO settings for a specific page identifier.
+ * This function is intended for public-facing pages.
+ *
+ * @param string $page_name The unique identifier for the page (e.g., 'home', 'about', 'service_123').
+ * @return array|false SEO settings (meta_title, meta_description, meta_keywords) or false if not found.
+ */
+function get_seo_for_page($page_name) {
+    global $db;
+    if (!$db) {
+        // Attempt to initialize DB if not available, or handle error
+        // This might happen if called very early or in a context where $db isn't globalized yet.
+        // For simplicity, assuming $db is available from an include like init.php in public context.
+        if (file_exists(PROJECT_ROOT . '/config/config.php')) {
+            require_once PROJECT_ROOT . '/config/config.php';
+            if (class_exists('Database')) { // Check if Database class is loaded
+                 try {
+                    $db = new Database(); // Re-initialize if necessary
+                } catch (PDOException $e) {
+                    log_error("Failed to initialize database in get_seo_for_page: " . $e->getMessage());
+                    return false; // Cannot proceed without DB
+                }
+            } else {
+                 log_error("Database class not found in get_seo_for_page.");
+                 return false;
+            }
+        } else {
+            log_error("Config file not found for DB initialization in get_seo_for_page.");
+            return false;
+        }
+    }
+
+    // Fetch specific fields needed for public display
+    $seo_data = $db->queryOne(
+        "SELECT meta_title, meta_description, meta_keywords FROM seo_settings WHERE page_name = :page_name",
+        [':page_name' => $page_name]
+    );
+
+    return $seo_data ?: false; // Return fetched data or false if nothing found
+}
+
 ?>

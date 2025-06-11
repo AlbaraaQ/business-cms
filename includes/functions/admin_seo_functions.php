@@ -13,69 +13,47 @@
  * @param int $entity_id معرف الكيان
  * @return array|false بيانات إعدادات SEO أو false إذا لم تكن موجودة
  */
-function get_seo_settings($entity_type, $entity_id) {
+function get_seo_settings_by_page_name($page_name) {
     global $db;
     
-    $stmt = $db->prepare("
-        SELECT * FROM seo_settings 
-        WHERE entity_type = ? AND entity_id = ?
-    ");
-    
-    $stmt->execute([$entity_type, $entity_id]);
-    
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    // Assuming $db is an instance of your Database class which uses named placeholders
+    return $db->queryOne("SELECT * FROM seo_settings WHERE page_name = :page_name", [':page_name' => $page_name]);
 }
 
 /**
- * إضافة أو تحديث إعدادات SEO لكيان معين
+ * إضافة أو تحديث إعدادات SEO لصفحة معينة
  * 
- * @param string $entity_type نوع الكيان (service, project, page)
- * @param int $entity_id معرف الكيان
- * @param array $data بيانات إعدادات SEO
+ * @param string $page_name اسم الصفحة (مفتاح فريد)
+ * @param array $data بيانات إعدادات SEO (meta_title, meta_description, meta_keywords)
  * @return bool نجاح أو فشل العملية
  */
-function save_seo_settings($entity_type, $entity_id, $data) {
+function save_seo_settings($page_name, $data) {
     global $db;
     
-    // التحقق من وجود إعدادات SEO للكيان
-    $existing = get_seo_settings($entity_type, $entity_id);
+    $existing = get_seo_settings_by_page_name($page_name);
     
-    // تحضير البيانات
     $seo_data = [
-        'meta_title' => $data['meta_title'] ?? '',
-        'meta_description' => $data['meta_description'] ?? '',
-        'keywords' => $data['keywords'] ?? '',
-        'updated_at' => date('Y-m-d H:i:s')
+        ':page_name' => $page_name, // page_name is used for WHERE or INSERT
+        ':meta_title' => $data['meta_title'] ?? '',
+        ':meta_description' => $data['meta_description'] ?? '',
+        ':meta_keywords' => $data['meta_keywords'] ?? ''
     ];
     
     if ($existing) {
         // تحديث الإعدادات الموجودة
-        $stmt = $db->prepare("
-            UPDATE seo_settings 
-            SET meta_title = ?, meta_description = ?, keywords = ?, updated_at = ? 
-            WHERE entity_type = ? AND entity_id = ?
-        ");
-        
-        $params = array_values($seo_data);
-        $params[] = $entity_type;
-        $params[] = $entity_id;
-        
-        return $stmt->execute($params);
+        $sql = "UPDATE seo_settings
+                SET meta_title = :meta_title,
+                    meta_description = :meta_description,
+                    meta_keywords = :meta_keywords,
+                    updated_at = NOW()
+                WHERE page_name = :page_name";
+        return $db->execute($sql, $seo_data);
     } else {
         // إضافة إعدادات جديدة
-        $seo_data['entity_type'] = $entity_type;
-        $seo_data['entity_id'] = $entity_id;
-        $seo_data['created_at'] = date('Y-m-d H:i:s');
-        
-        $columns = implode(', ', array_keys($seo_data));
-        $placeholders = implode(', ', array_fill(0, count($seo_data), '?'));
-        
-        $stmt = $db->prepare("
-            INSERT INTO seo_settings ($columns) 
-            VALUES ($placeholders)
-        ");
-        
-        return $stmt->execute(array_values($seo_data));
+        // No need to add :page_name again to seo_data for INSERT if it's already there for the query
+        $sql = "INSERT INTO seo_settings (page_name, meta_title, meta_description, meta_keywords, created_at, updated_at)
+                VALUES (:page_name, :meta_title, :meta_description, :meta_keywords, NOW(), NOW())";
+        return $db->execute($sql, $seo_data);
     }
 }
 
@@ -168,8 +146,8 @@ function ensure_unique_slug($slug, $table, $id_column, $exclude_id = null) {
  * @param string $default_title العنوان الافتراضي إذا لم يكن هناك عنوان مخصص
  * @return string عنوان الصفحة
  */
-function get_meta_title($entity_type, $entity_id, $default_title = '') {
-    $seo_settings = get_seo_settings($entity_type, $entity_id);
+function get_meta_title($page_name, $default_title = '') { // Changed params
+    $seo_settings = get_seo_settings_by_page_name($page_name); // Use new function
     
     if ($seo_settings && !empty($seo_settings['meta_title'])) {
         return $seo_settings['meta_title'];
@@ -186,8 +164,8 @@ function get_meta_title($entity_type, $entity_id, $default_title = '') {
  * @param string $default_description الوصف الافتراضي إذا لم يكن هناك وصف مخصص
  * @return string وصف الصفحة
  */
-function get_meta_description($entity_type, $entity_id, $default_description = '') {
-    $seo_settings = get_seo_settings($entity_type, $entity_id);
+function get_meta_description($page_name, $default_description = '') { // Changed params
+    $seo_settings = get_seo_settings_by_page_name($page_name); // Use new function
     
     if ($seo_settings && !empty($seo_settings['meta_description'])) {
         return $seo_settings['meta_description'];
@@ -204,11 +182,11 @@ function get_meta_description($entity_type, $entity_id, $default_description = '
  * @param string $default_keywords الكلمات المفتاحية الافتراضية إذا لم تكن هناك كلمات مخصصة
  * @return string الكلمات المفتاحية
  */
-function get_keywords($entity_type, $entity_id, $default_keywords = '') {
-    $seo_settings = get_seo_settings($entity_type, $entity_id);
+function get_keywords($page_name, $default_keywords = '') { // Changed params
+    $seo_settings = get_seo_settings_by_page_name($page_name); // Use new function
     
-    if ($seo_settings && !empty($seo_settings['keywords'])) {
-        return $seo_settings['keywords'];
+    if ($seo_settings && !empty($seo_settings['meta_keywords'])) { // Changed to meta_keywords
+        return $seo_settings['meta_keywords']; // Changed to meta_keywords
     }
     
     return $default_keywords;

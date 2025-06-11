@@ -14,30 +14,16 @@
  * @param int $limit عدد الخدمات المطلوبة (0 للحصول على الكل)
  * @return array مصفوفة تحتوي على بيانات الخدمات
  */
-function get_all_services($active_only = false, $featured_only = false, $limit = 0) {
+function get_all_services($limit = 0) { // Removed $active_only, $featured_only
     global $db;
     
-    $sql = "SELECT * FROM services";
+    // Selecting specific columns as per new schema
+    $sql = "SELECT id, name, description, icon_class, created_at, updated_at FROM services ORDER BY created_at DESC";
     $params = [];
-    $conditions = [];
-    
-    if ($active_only) {
-        $conditions[] = "is_active = 1";
-    }
-    
-    if ($featured_only) {
-        $conditions[] = "is_featured = 1";
-    }
-    
-    if (!empty($conditions)) {
-        $sql .= " WHERE " . implode(" AND ", $conditions);
-    }
-    
-    $sql .= " ORDER BY created_at DESC";
     
     if ($limit > 0) {
         $sql .= " LIMIT :limit_val";
-        $params['limit_val'] = $limit;
+        $params[':limit_val'] = $limit; // Ensure placeholder is named if using named params
     }
     
     return $db->query($sql, $params);
@@ -49,123 +35,10 @@ function get_all_services($active_only = false, $featured_only = false, $limit =
  * @param int $service_id معرف الخدمة
  * @return array|false بيانات الخدمة أو false إذا لم يتم العثور عليها
  */
-function get_service_by_id($service_id) {
+function get_service_by_id($service_id) { // Parameter name kept as $service_id for consistency with caller, but will use as :id
     global $db;
-    
-    return $db->queryOne("SELECT * FROM services WHERE service_id = :service_id", [':service_id' => $service_id]);
-}
-
-/**
- * الحصول على خدمة بواسطة الرابط المخصص
- * 
- * @param string $slug الرابط المخصص للخدمة
- * @return array|false بيانات الخدمة أو false إذا لم يتم العثور عليها
- */
-function get_service_by_slug($slug) {
-    global $db;
-    
-    return $db->queryOne("SELECT * FROM services WHERE slug = :slug", [':slug' => $slug]);
-}
-
-/**
- * الحصول على الخدمات حسب التصنيف
- * 
- * @param string $category تصنيف الخدمات
- * @param bool $active_only الحصول على الخدمات النشطة فقط
- * @param int $limit عدد الخدمات المطلوبة (0 للحصول على الكل)
- * @return array مصفوفة تحتوي على بيانات الخدمات
- */
-function get_services_by_category($category, $active_only = true, $limit = 0) {
-    global $db;
-    
-    $sql = "SELECT * FROM services WHERE category = ?";
-    $params = [$category];
-    
-    if ($active_only) {
-        $sql .= " AND is_active = 1";
-    }
-    
-    $sql .= " ORDER BY created_at DESC";
-    
-    if ($limit > 0) {
-        $sql .= " LIMIT :limit_val";
-        // Parameters are already positional, so we need to ensure correct order if mixing named and positional
-        // For simplicity with $db->query, ensure all params are consistently positional or named
-        // Here, we'll stick to positional for this query as it was originally.
-        // $params['limit_val'] = $limit; // This would be for named
-        $params[] = $limit;
-    }
-    
-    return $db->query($sql, $params);
-}
-
-/**
- * البحث في الخدمات
- * 
- * @param string $keyword كلمة البحث
- * @param bool $active_only البحث في الخدمات النشطة فقط
- * @return array مصفوفة تحتوي على نتائج البحث
- */
-function search_services($keyword, $active_only = true) {
-    global $db;
-    
-    $keyword = '%' . $keyword . '%';
-    
-    $sql = "SELECT * FROM services WHERE (title LIKE ? OR description LIKE ? OR short_description LIKE ? OR category LIKE ?)";
-    $params = [$keyword, $keyword, $keyword, $keyword];
-    
-    if ($active_only) {
-        $sql .= " AND is_active = 1";
-    }
-    
-    $sql .= " ORDER BY created_at DESC";
-    
-    return $db->query($sql, $params);
-}
-
-/**
- * الحصول على الخدمات ذات الصلة
- * 
- * @param int $service_id معرف الخدمة الحالية
- * @param string $category تصنيف الخدمة الحالية
- * @param int $limit عدد الخدمات المطلوبة
- * @return array مصفوفة تحتوي على الخدمات ذات الصلة
- */
-function get_related_services($service_id, $category, $limit = 3) {
-    global $db;
-    
-    $sql = "SELECT * FROM services WHERE service_id != :service_id AND category = :category AND is_active = 1 ORDER BY RAND() LIMIT :limit_val";
-    
-    return $db->query($sql, [':service_id' => $service_id, ':category' => $category, ':limit_val' => $limit]);
-}
-
-/**
- * الحصول على تصنيفات الخدمات
- * 
- * @param bool $active_only الحصول على تصنيفات الخدمات النشطة فقط
- * @return array مصفوفة تحتوي على تصنيفات الخدمات
- */
-function get_service_categories($active_only = true) {
-    global $db;
-    
-    $sql = "SELECT DISTINCT category FROM services";
-    
-    if ($active_only) {
-        $sql .= " WHERE is_active = 1";
-    }
-    
-    $sql .= " ORDER BY category ASC";
-    
-    $results = $db->query($sql);
-    $categories = [];
-    if ($results) {
-        foreach ($results as $row) {
-            if (!empty($row['category'])) {
-                $categories[] = $row['category'];
-            }
-        }
-    }
-    return $categories;
+    // Selecting specific columns as per new schema, using 'id' as the column name
+    return $db->queryOne("SELECT id, name, description, icon_class, created_at, updated_at FROM services WHERE id = :id", [':id' => $service_id]);
 }
 
 /**
@@ -177,35 +50,24 @@ function get_service_categories($active_only = true) {
 function add_service($data) {
     global $db;
     
-    // التحقق من البيانات المطلوبة
-    if (empty($data['title']) || empty($data['short_description']) || empty($data['description'])) {
+    // التحقق من البيانات المطلوبة (name is the primary identifier now, description and icon_class are other fields)
+    if (empty($data['name'])) { // Assuming 'name' is required
         return false;
     }
     
-    // إنشاء slug إذا لم يتم توفيره
-    if (empty($data['slug'])) {
-        $data['slug'] = generate_slug($data['title']);
-    } else {
-        $data['slug'] = generate_slug($data['slug']);
-    }
-    
-    // التحقق من تفرد slug
-    $data['slug'] = ensure_unique_slug($data['slug'], 'services', 'service_id');
-    
-    // إضافة تاريخ الإنشاء والتحديث
-    if (!isset($data['created_at'])) {
-        $data['created_at'] = date('Y-m-d H:i:s');
-    }
-    
-    if (!isset($data['updated_at'])) {
-        $data['updated_at'] = date('Y-m-d H:i:s');
-    }
+    // Prepare data for insertion according to new schema
+    $service_data = [
+        'name' => $data['name'],
+        'description' => $data['description'] ?? null, // Description can be nullable or empty
+        'icon_class' => $data['icon_class'] ?? null,   // Icon class can be nullable or empty
+        // created_at and updated_at will be set by NOW() in the query
+    ];
     
     // إدراج الخدمة في قاعدة البيانات
-    $columns = implode(', ', array_keys($data));
-    $placeholders = ':' . implode(', :', array_keys($data));
-    $sql = "INSERT INTO services ($columns) VALUES ($placeholders)";
-    $result = $db->execute($sql, $data);
+    $sql = "INSERT INTO services (name, description, icon_class, created_at, updated_at)
+            VALUES (:name, :description, :icon_class, NOW(), NOW())";
+
+    $result = $db->execute($sql, $service_data);
     return $result ? $db->lastInsertId() : false;
 }
 
@@ -216,34 +78,56 @@ function add_service($data) {
  * @param array $data بيانات الخدمة
  * @return bool نجاح أو فشل العملية
  */
-function update_service($service_id, $data) {
+function update_service($service_id, $data) { // $service_id is the ID of the service to update
     global $db;
     
-    // التحقق من وجود الخدمة
+    // التحقق من وجود الخدمة (using the updated get_service_by_id which queries by `id`)
     $service = get_service_by_id($service_id);
     
     if (!$service) {
         return false;
     }
     
-    // تحديث slug إذا تم توفيره
-    if (isset($data['slug']) && !empty($data['slug'])) {
-        $data['slug'] = generate_slug($data['slug']);
-        $data['slug'] = ensure_unique_slug($data['slug'], 'services', 'service_id', $service_id);
+    // Prepare data for update according to new schema
+    // Only 'name', 'description', 'icon_class' are updatable via this function as per requirements
+    $update_data = [];
+    if (isset($data['name'])) {
+        $update_data['name'] = $data['name'];
     }
-    
-    // إضافة تاريخ التحديث
-    $data['updated_at'] = date('Y-m-d H:i:s');
-    
-    // تحديث الخدمة في قاعدة البيانات
+    if (isset($data['description'])) {
+        $update_data['description'] = $data['description'];
+    }
+    if (isset($data['icon_class'])) {
+        $update_data['icon_class'] = $data['icon_class'];
+    }
+
+    if (empty($update_data)) { // Nothing to update
+        return true; // Or false if an update was expected
+    }
+
+    // Build SET clauses
     $set_clauses = [];
-    foreach (array_keys($data) as $key) {
+    foreach (array_keys($update_data) as $key) {
         $set_clauses[] = "$key = :$key";
     }
-    $sql = "UPDATE services SET " . implode(', ', $set_clauses) . " WHERE service_id = :service_id_condition";
-    $data_for_execute = $data; // Use a copy for execute
-    $data_for_execute['service_id_condition'] = $service_id;
-    return $db->execute($sql, $data_for_execute);
+    
+    // Add updated_at timestamp
+    $set_clauses[] = "updated_at = NOW()";
+    
+    $sql = "UPDATE services SET " . implode(', ', $set_clauses) . " WHERE id = :id";
+    
+    // Add the service ID to the parameters for the WHERE clause
+    $update_data[':id'] = $service_id;
+    
+    // Map parameters for execute, ensuring correct placeholders
+    $execute_params = [];
+    foreach($update_data as $key => $value){
+        // If key already starts with ':', it's the :id for WHERE clause
+        $param_key = (strpos($key, ':') === 0) ? substr($key, 1) : $key;
+        $execute_params[":$param_key"] = $value;
+    }
+
+    return $db->execute($sql, $execute_params);
 }
 
 /**
@@ -255,77 +139,29 @@ function update_service($service_id, $data) {
 function delete_service($service_id) {
     global $db;
     
-    // التحقق من وجود الخدمة
+    // التحقق من وجود الخدمة (using the updated get_service_by_id which queries by `id`)
     $service = get_service_by_id($service_id);
     
     if (!$service) {
         return false;
     }
     
-    // حذف الصورة
-    if (!empty($service['image'])) {
-        delete_image($service['image']);
-    }
-    
-    // حذف صور الخدمة
-    $service_images = get_service_images($service_id);
-    
-    foreach ($service_images as $image) {
-        delete_image($image['image_path']);
-    }
-    
-    // حذف صور الخدمة من قاعدة البيانات
-    $db->execute("DELETE FROM service_images WHERE service_id = ?", [$service_id]);
-    
-    // حذف إعدادات SEO
-    $db->execute("DELETE FROM seo_settings WHERE entity_type = ? AND entity_id = ?", ['service', $service_id]);
-    
-    // حذف الخدمة من قاعدة البيانات
-    return $db->execute("DELETE FROM services WHERE service_id = ?", [$service_id]);
+    // No need to delete images or SEO settings as per new requirements for this function
+
+    // حذف الخدمة من قاعدة البيانات using `id`
+    return $db->execute("DELETE FROM services WHERE id = :id", [':id' => $service_id]);
 }
 
 /**
- * تغيير حالة الخدمة (نشطة/غير نشطة)
+ * الحصول على الخدمات المميزة (الأحدث حالياً)
  * 
- * @param int $service_id معرف الخدمة
- * @param bool $is_active الحالة الجديدة
- * @return bool نجاح أو فشل العملية
+ * @param int $limit عدد الخدمات المطلوبة
+ * @return array مصفوفة تحتوي على بيانات الخدمات
  */
-function toggle_service_status($service_id, $is_active) {
+function get_featured_services($limit = 6) {
     global $db;
-    
-    // التحقق من وجود الخدمة
-    $service = get_service_by_id($service_id);
-    
-    if (!$service) {
-        return false;
-    }
-    
-    // تحديث حالة الخدمة
-    $sql = "UPDATE services SET is_active = :is_active WHERE service_id = :service_id";
-    return $db->execute($sql, [':is_active' => $is_active ? 1 : 0, ':service_id' => $service_id]);
-}
-
-/**
- * تغيير حالة تمييز الخدمة (مميزة/غير مميزة)
- * 
- * @param int $service_id معرف الخدمة
- * @param bool $is_featured الحالة الجديدة
- * @return bool نجاح أو فشل العملية
- */
-function toggle_service_featured($service_id, $is_featured) {
-    global $db;
-    
-    // التحقق من وجود الخدمة
-    $service = get_service_by_id($service_id);
-    
-    if (!$service) {
-        return false;
-    }
-    
-    // تحديث حالة تمييز الخدمة
-    $sql = "UPDATE services SET is_featured = :is_featured WHERE service_id = :service_id";
-    return $db->execute($sql, [':is_featured' => $is_featured ? 1 : 0, ':service_id' => $service_id]);
+    $sql = "SELECT id, name, description, icon_class FROM services ORDER BY created_at DESC LIMIT :limit";
+    return $db->query($sql, [':limit' => $limit]);
 }
 
 /**
@@ -334,34 +170,34 @@ function toggle_service_featured($service_id, $is_featured) {
  * @param array $service بيانات الخدمة
  * @return string كود HTML لعرض الخدمة
  */
+/*
 function render_service_card($service) {
     $output = '<div class="col-md-4 mb-4">';
     $output .= '<div class="card service-card h-100">';
     
     // صورة الخدمة
-    if (!empty($service['image'])) {
+    if (!empty($service['image'])) { // This would need to be changed if image handling changes
         $output .= '<div class="service-image">';
-        $output .= lazy_load_image(UPLOAD_URL . '/' . $service['image'], $service['title'], 'card-img-top');
+        $output .= lazy_load_image(UPLOAD_URL . '/' . $service['image'], $service['name'], 'card-img-top'); // title -> name
         $output .= '</div>';
+    } elseif (!empty($service['icon_class'])) { // Display icon if no image
+        $output .= '<div class="service-icon-display text-center p-3"><i class="' . htmlspecialchars($service['icon_class']) . ' fa-3x"></i></div>';
     }
     
     $output .= '<div class="card-body">';
     
-    // تصنيف الخدمة
-    if (!empty($service['category'])) {
-        $output .= '<div class="service-category mb-2">' . htmlspecialchars($service['category']) . '</div>';
-    }
-    
     // عنوان الخدمة
-    $output .= '<h3 class="card-title">' . htmlspecialchars($service['title']) . '</h3>';
+    $output .= '<h3 class="card-title">' . htmlspecialchars($service['name']) . '</h3>'; // title -> name
     
-    // وصف الخدمة
-    $output .= '<p class="card-text">' . truncate_text($service['short_description'], 100) . '</p>';
+    // وصف الخدمة - using description, truncated
+    $output .= '<p class="card-text">' . truncate_text($service['description'], 100) . '</p>';
     
     $output .= '</div>';
     
     $output .= '<div class="card-footer bg-transparent border-0">';
-    $output .= '<a href="' . create_service_link($service['slug']) . '" class="btn btn-primary">عرض المزيد</a>';
+    // Link generation would need to be updated if slugs are removed or structure changes
+    // For now, assuming a generic link or placeholder
+    $output .= '<a href="service-details.php?id=' . $service['id'] . '" class="btn btn-primary">عرض المزيد</a>';
     $output .= '</div>';
     
     $output .= '</div>';
@@ -369,76 +205,44 @@ function render_service_card($service) {
     
     return $output;
 }
+*/
 
 /**
  * عرض تفاصيل الخدمة في الواجهة الأمامية
  * 
  * @param array $service بيانات الخدمة
- * @param array $service_images صور الخدمة
+ * @param array $service_images صور الخدمة (This parameter might become obsolete or change)
  * @return string كود HTML لعرض تفاصيل الخدمة
  */
-function render_service_details($service, $service_images) {
+/*
+function render_service_details($service, $service_images = []) { // service_images might be removed or handled differently
     $output = '<div class="service-details">';
     
     // عنوان الخدمة
-    $output .= '<h1 class="service-title">' . htmlspecialchars($service['title']) . '</h1>';
+    $output .= '<h1 class="service-title">' . htmlspecialchars($service['name']) . '</h1>'; // title -> name
     
-    // معلومات الخدمة
-    $output .= '<div class="service-meta mb-4">';
-    
-    if (!empty($service['category'])) {
-        $output .= '<span class="service-category me-3"><i class="fas fa-tag"></i> ' . htmlspecialchars($service['category']) . '</span>';
-    }
-    
-    $output .= '</div>';
-    
-    // معرض الصور
-    if (!empty($service_images)) {
-        $output .= '<div class="service-gallery mb-4">';
-        $output .= '<div class="row">';
-        
-        foreach ($service_images as $image) {
-            $output .= '<div class="col-md-4 col-6 mb-3">';
-            $output .= '<a href="' . UPLOAD_URL . '/' . $image['image_path'] . '" data-fancybox="service-gallery">';
-            $output .= lazy_load_image(UPLOAD_URL . '/' . $image['image_path'], $service['title'], 'img-fluid rounded');
-            $output .= '</a>';
-            $output .= '</div>';
-        }
-        
-        $output .= '</div>';
-        $output .= '</div>';
-    } else if (!empty($service['image'])) {
-        // إذا لم تكن هناك صور متعددة، عرض الصورة الرئيسية
-        $output .= '<div class="service-main-image mb-4">';
-        $output .= '<a href="' . UPLOAD_URL . '/' . $service['image'] . '" data-fancybox>';
-        $output .= '<img src="' . UPLOAD_URL . '/' . $service['image'] . '" alt="' . htmlspecialchars($service['title']) . '" class="img-fluid rounded">';
-        $output .= '</a>';
-        $output .= '</div>';
+    // Icon if available
+    if (!empty($service['icon_class'])) {
+        $output .= '<div class="service-main-icon mb-3"><i class="' . htmlspecialchars($service['icon_class']) . ' fa-2x"></i></div>';
     }
     
     // وصف الخدمة
     $output .= '<div class="service-description mb-4">';
     $output .= '<h2>وصف الخدمة</h2>';
-    $output .= '<div class="content">' . $service['description'] . '</div>';
+    // Assuming description field contains HTML if it was from a rich text editor
+    $output .= '<div class="content">' . ($service['description']) . '</div>';
     $output .= '</div>';
     
-    // مميزات الخدمة
-    if (!empty($service['features'])) {
-        $output .= '<div class="service-features mb-4">';
-        $output .= '<h2>مميزات الخدمة</h2>';
-        $output .= '<div class="content">' . $service['features'] . '</div>';
-        $output .= '</div>';
-    }
-    
-    // زر طلب الخدمة
+    // زر طلب الخدمة (link might need update)
     $output .= '<div class="service-cta mt-4">';
-    $output .= '<a href="contact.php?service=' . urlencode($service['title']) . '" class="btn btn-primary btn-lg">طلب الخدمة</a>';
+    $output .= '<a href="contact.php?service=' . urlencode($service['name']) . '" class="btn btn-primary btn-lg">طلب الخدمة</a>';
     $output .= '</div>';
     
     $output .= '</div>';
     
     return $output;
 }
+*/
 
 /**
  * عرض الخدمات ذات الصلة
@@ -446,6 +250,7 @@ function render_service_details($service, $service_images) {
  * @param array $related_services الخدمات ذات الصلة
  * @return string كود HTML لعرض الخدمات ذات الصلة
  */
+/*
 function render_related_services($related_services) {
     if (empty($related_services)) {
         return '';
@@ -456,15 +261,16 @@ function render_related_services($related_services) {
     
     $output .= '<div class="row">';
     
-    foreach ($related_services as $service) {
-        $output .= render_service_card($service);
-    }
+    // foreach ($related_services as $service) {
+    //     $output .= render_service_card($service); // This function is commented out
+    // }
     
     $output .= '</div>';
     $output .= '</div>';
     
     return $output;
 }
+*/
 
 /**
  * عرض تصنيفات الخدمات
@@ -473,30 +279,10 @@ function render_related_services($related_services) {
  * @param string $active_category التصنيف النشط
  * @return string كود HTML لعرض تصنيفات الخدمات
  */
+/*
 function render_service_categories($categories, $active_category = '') {
-    if (empty($categories)) {
-        return '';
-    }
-    
-    $output = '<div class="service-categories mb-4">';
-    $output .= '<ul class="nav nav-pills">';
-    
-    // إضافة زر "الكل"
-    $all_active = empty($active_category) ? 'active' : '';
-    $output .= '<li class="nav-item">';
-    $output .= '<a class="nav-link ' . $all_active . '" href="services.php">الكل</a>';
-    $output .= '</li>';
-    
-    foreach ($categories as $category) {
-        $active = ($category === $active_category) ? 'active' : '';
-        
-        $output .= '<li class="nav-item">';
-        $output .= '<a class="nav-link ' . $active . '" href="services.php?category=' . urlencode($category) . '">' . htmlspecialchars($category) . '</a>';
-        $output .= '</li>';
-    }
-    
-    $output .= '</ul>';
-    $output .= '</div>';
-    
-    return $output;
+    // This function is likely obsolete with the removal of categories from services table
+    return '';
+}
+*/
 }

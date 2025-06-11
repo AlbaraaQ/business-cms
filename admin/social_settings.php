@@ -25,81 +25,86 @@ check_admin_login();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
-    switch ($action) {
-        case 'update_social':
-            $platform_id = (int)$_POST['platform_id'];
-            $url = trim($_POST['url']);
-            $username = trim($_POST['username'] ?? '');
-            $is_active = isset($_POST['is_active']) ? 1 : 0;
-            $sort_order = (int)$_POST['sort_order'];
-            
-            // تحديث الإعدادات
-            $sql_update = "UPDATE social_settings SET url = :url, username = :username, is_active = :is_active, sort_order = :sort_order, updated_at = NOW() WHERE id = :id";
-            $params_update = [
-                ':url' => $url, ':username' => $username, ':is_active' => $is_active,
-                ':sort_order' => $sort_order, ':id' => $platform_id
-            ];
-            if ($db->execute($sql_update, $params_update)) {
-                // تسجيل النشاط
-                log_activity($_SESSION['admin_id'], 'update_social_settings', 'social_settings', $platform_id);
-                $success_message = "تم تحديث إعدادات الشبكة الاجتماعية بنجاح";
-            } else {
-                $error_message = "فشل تحديث إعدادات الشبكة الاجتماعية.";
-            }
-            break;
-            
-        case 'add_social':
-            $platform = trim($_POST['platform']);
-            $url = trim($_POST['url']);
-            $username = trim($_POST['username'] ?? '');
-            $is_active = isset($_POST['is_active']) ? 1 : 0;
-            $sort_order = (int)$_POST['sort_order'];
-            
-            // التحقق من عدم وجود المنصة بالفعل
-            $count_platform = $db->queryOne("SELECT COUNT(*) as count FROM social_settings WHERE platform = :platform", [':platform' => $platform]);
-            $exists = ($count_platform && $count_platform['count'] > 0);
-            
-            if ($exists) {
-                $error_message = "هذه المنصة موجودة بالفعل";
-            } else {
-                // إضافة منصة جديدة
-                $sql_insert = "INSERT INTO social_settings (platform, url, username, is_active, sort_order) VALUES (:platform, :url, :username, :is_active, :sort_order)";
-                $params_insert = [
-                    ':platform' => $platform, ':url' => $url, ':username' => $username,
-                    ':is_active' => $is_active, ':sort_order' => $sort_order
+    // CSRF Token Verification
+    if (!verify_csrf_token($_POST[CSRF_TOKEN_NAME] ?? null)) {
+        $error_message = "خطأ في التحقق (CSRF). يرجى المحاولة مرة أخرى.";
+        // To prevent further execution, you might want to set $action to an invalid value or exit/redirect
+        // For now, falling through to display error_message.
+    } else {
+        switch ($action) {
+            case 'update_social':
+                $link_id = (int)$_POST['link_id']; // Changed from platform_id
+                $profile_url = trim($_POST['profile_url']); // Changed from url
+                $icon_class = trim($_POST['icon_class'] ?? '');
+
+                // تحديث الرابط
+                // platform_name is generally not updatable to maintain consistency, only URL and icon.
+                $sql_update = "UPDATE social_links SET profile_url = :profile_url, icon_class = :icon_class, updated_at = NOW() WHERE id = :id";
+                $params_update = [
+                    ':profile_url' => $profile_url,
+                    ':icon_class' => $icon_class,
+                    ':id' => $link_id
                 ];
-                if ($db->execute($sql_insert, $params_insert)) {
-                    $platform_id = $db->lastInsertId();
-                    // تسجيل النشاط
-                    log_activity($_SESSION['admin_id'], 'add_social_platform', 'social_settings', $platform_id);
-                    $success_message = "تمت إضافة منصة جديدة بنجاح";
+                if ($db->execute($sql_update, $params_update)) {
+                    log_activity($_SESSION['admin_id'], 'update_social_link', 'social_links', $link_id);
+                    $success_message = "تم تحديث رابط الشبكة الاجتماعية بنجاح";
                 } else {
-                    $error_message = "فشل إضافة منصة جديدة.";
+                    $error_message = "فشل تحديث رابط الشبكة الاجتماعية.";
                 }
-            }
-            break;
-            
-        case 'delete_social':
-            $platform_id = (int)$_POST['platform_id'];
-            
-            // الحصول على بيانات المنصة قبل الحذف
-            $platform_data = $db->queryOne("SELECT * FROM social_settings WHERE id = :id", [':id' => $platform_id]);
-            
-            if ($platform_data) {
-                if ($db->execute("DELETE FROM social_settings WHERE id = :id", [':id' => $platform_id])) {
-                    // تسجيل النشاط
-                    log_activity($_SESSION['admin_id'], 'delete_social_platform', 'social_settings', $platform_id, $platform_data);
-                    $success_message = "تم حذف المنصة بنجاح";
+                break;
+
+            case 'add_social':
+                $platform_name = trim($_POST['platform_name']); // Changed from platform
+                $profile_url = trim($_POST['profile_url']); // Changed from url
+                $icon_class = trim($_POST['icon_class'] ?? '');
+
+                // التحقق من عدم وجود اسم المنصة بالفعل
+                $count_platform = $db->queryOne("SELECT COUNT(*) as count FROM social_links WHERE platform_name = :platform_name", [':platform_name' => $platform_name]);
+                $exists = ($count_platform && $count_platform['count'] > 0);
+
+                if ($exists) {
+                    $error_message = "اسم هذه المنصة موجود بالفعل";
                 } else {
-                    $error_message = "فشل حذف المنصة.";
+                    // إضافة رابط جديد
+                    $sql_insert = "INSERT INTO social_links (platform_name, profile_url, icon_class, created_at, updated_at) VALUES (:platform_name, :profile_url, :icon_class, NOW(), NOW())";
+                    $params_insert = [
+                        ':platform_name' => $platform_name,
+                        ':profile_url' => $profile_url,
+                        ':icon_class' => $icon_class
+                    ];
+                    if ($db->execute($sql_insert, $params_insert)) {
+                        $link_id = $db->lastInsertId();
+                        log_activity($_SESSION['admin_id'], 'add_social_link', 'social_links', $link_id);
+                        $success_message = "تمت إضافة رابط منصة جديدة بنجاح";
+                    } else {
+                        $error_message = "فشل إضافة رابط منصة جديدة.";
+                    }
                 }
-            }
-            break;
+                break;
+
+            case 'delete_social':
+                $link_id = (int)$_POST['link_id']; // Changed from platform_id
+
+                // الحصول على بيانات الرابط قبل الحذف
+                $link_data = $db->queryOne("SELECT * FROM social_links WHERE id = :id", [':id' => $link_id]);
+
+                if ($link_data) {
+                    if ($db->execute("DELETE FROM social_links WHERE id = :id", [':id' => $link_id])) {
+                        log_activity($_SESSION['admin_id'], 'delete_social_link', 'social_links', $link_id, $link_data);
+                        $success_message = "تم حذف رابط المنصة بنجاح";
+                    } else {
+                        $error_message = "فشل حذف رابط المنصة.";
+                    }
+                } else {
+                    $error_message = "الرابط غير موجود.";
+                }
+                break;
+        }
     }
 }
 
-// الحصول على إعدادات الشبكات الاجتماعية
-$social_settings = $db->query("SELECT * FROM social_settings ORDER BY sort_order ASC");
+// الحصول على روابط الشبكات الاجتماعية
+$social_links = $db->query("SELECT id, platform_name, profile_url, icon_class, created_at FROM social_links ORDER BY id ASC"); // Changed table and columns
 
 include 'includes/header.php';
 ?>
@@ -133,7 +138,7 @@ include 'includes/header.php';
                     <h5 class="card-title mb-0">الشبكات الاجتماعية</h5>
                 </div>
                 <div class="card-body">
-                    <?php if (empty($social_settings)): ?>
+                    <?php if (empty($social_links)): ?>
                         <div class="text-center py-5">
                             <i class="fas fa-share-alt fa-3x text-muted mb-3"></i>
                             <p class="text-muted">لا توجد شبكات اجتماعية مضافة</p>
@@ -143,55 +148,49 @@ include 'includes/header.php';
                             <table class="table table-hover">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>الترتيب</th>
                                         <th>المنصة</th>
                                         <th>الرابط</th>
-                                        <th>اسم المستخدم</th>
-                                        <th>الحالة</th>
+                                        <th>أيقونة (Class)</th>
+                                        <th>تاريخ الإضافة</th>
                                         <th>الإجراءات</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <?php foreach ($social_settings as $social): ?>
+                                    <?php foreach ($social_links as $link): ?>
                                         <tr>
-                                            <td><?php echo $social['sort_order']; ?></td>
                                             <td>
                                                 <div class="d-flex align-items-center">
-                                                    <i class="fab fa-<?php echo strtolower($social['platform']); ?> fa-2x me-2"></i>
-                                                    <span><?php echo ucfirst(htmlspecialchars($social['platform'])); ?></span>
+                                                    <i class="<?php echo htmlspecialchars($link['icon_class']); ?> fa-2x me-2"></i>
+                                                    <span><?php echo htmlspecialchars($link['platform_name']); ?></span>
                                                 </div>
                                             </td>
                                             <td>
-                                                <?php if ($social['url']): ?>
-                                                    <a href="<?php echo htmlspecialchars($social['url']); ?>" target="_blank">
-                                                        <?php echo htmlspecialchars($social['url']); ?>
+                                                <?php if ($link['profile_url']): ?>
+                                                    <a href="<?php echo htmlspecialchars($link['profile_url']); ?>" target="_blank">
+                                                        <?php echo htmlspecialchars($link['profile_url']); ?>
                                                     </a>
                                                 <?php else: ?>
                                                     <span class="text-muted">غير محدد</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td>
-                                                <?php if ($social['username']): ?>
-                                                    <?php echo htmlspecialchars($social['username']); ?>
+                                                <?php if ($link['icon_class']): ?>
+                                                    <code><?php echo htmlspecialchars($link['icon_class']); ?></code>
                                                 <?php else: ?>
                                                     <span class="text-muted">غير محدد</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td>
-                                                <?php if ($social['is_active']): ?>
-                                                    <span class="badge bg-success">مفعل</span>
-                                                <?php else: ?>
-                                                    <span class="badge bg-danger">غير مفعل</span>
-                                                <?php endif; ?>
+                                                <?php echo date('Y-m-d', strtotime($link['created_at'])); ?>
                                             </td>
                                             <td>
                                                 <div class="btn-group btn-group-sm" role="group">
                                                     <button type="button" class="btn btn-outline-primary" 
-                                                            onclick="editSocial(<?php echo $social['id']; ?>)">
+                                                            onclick="editSocial(<?php echo $link['id']; ?>)">
                                                         <i class="fas fa-edit"></i>
                                                     </button>
                                                     <button type="button" class="btn btn-outline-danger" 
-                                                            onclick="deleteSocial(<?php echo $social['id']; ?>, '<?php echo $social['platform']; ?>')">
+                                                            onclick="deleteSocial(<?php echo $link['id']; ?>, '<?php echo htmlspecialchars(addslashes($link['platform_name'])); ?>')">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 </div>
@@ -218,32 +217,24 @@ include 'includes/header.php';
             </div>
             <form method="POST">
                 <div class="modal-body">
+                    <?php echo csrf_input_field(); ?>
                     <input type="hidden" name="action" value="add_social">
                     
                     <div class="mb-3">
-                        <label for="platform" class="form-label">اسم المنصة</label>
-                        <input type="text" name="platform" id="platform" class="form-control" required>
-                        <small class="form-text text-muted">مثال: facebook, twitter, instagram, linkedin, youtube, whatsapp</small>
+                        <label for="add_platform_name" class="form-label">اسم المنصة</label>
+                        <input type="text" name="platform_name" id="add_platform_name" class="form-control" required>
+                        <small class="form-text text-muted">مثال: Facebook, Twitter, Instagram</small>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="url" class="form-label">الرابط</label>
-                        <input type="url" name="url" id="url" class="form-control">
+                        <label for="add_profile_url" class="form-label">رابط الملف الشخصي</label>
+                        <input type="url" name="profile_url" id="add_profile_url" class="form-control" required>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="username" class="form-label">اسم المستخدم</label>
-                        <input type="text" name="username" id="username" class="form-control">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="sort_order" class="form-label">الترتيب</label>
-                        <input type="number" name="sort_order" id="sort_order" class="form-control" value="0" min="0">
-                    </div>
-                    
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="is_active" checked>
-                        <label class="form-check-label" for="is_active">تفعيل</label>
+                        <label for="add_icon_class" class="form-label">فئة الأيقونة (Icon Class)</label>
+                        <input type="text" name="icon_class" id="add_icon_class" class="form-control">
+                        <small class="form-text text-muted">مثال: fab fa-facebook-f, fab fa-twitter. استخدم <a href="https://fontawesome.com/icons" target="_blank">Font Awesome</a>.</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -265,32 +256,25 @@ include 'includes/header.php';
             </div>
             <form method="POST">
                 <div class="modal-body">
+                    <?php echo csrf_input_field(); ?>
                     <input type="hidden" name="action" value="update_social">
-                    <input type="hidden" name="platform_id" id="edit_platform_id">
+                    <input type="hidden" name="link_id" id="edit_link_id">
                     
                     <div class="mb-3">
-                        <label for="edit_platform_name" class="form-label">اسم المنصة</label>
-                        <input type="text" id="edit_platform_name" class="form-control" disabled>
+                        <label for="edit_platform_name_display" class="form-label">اسم المنصة</label>
+                        <input type="text" id="edit_platform_name_display" class="form-control" disabled>
+                        <small>لا يمكن تغيير اسم المنصة بعد الإضافة.</small>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="edit_url" class="form-label">الرابط</label>
-                        <input type="url" name="url" id="edit_url" class="form-control">
+                        <label for="edit_profile_url" class="form-label">رابط الملف الشخصي</label>
+                        <input type="url" name="profile_url" id="edit_profile_url" class="form-control" required>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="edit_username" class="form-label">اسم المستخدم</label>
-                        <input type="text" name="username" id="edit_username" class="form-control">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="edit_sort_order" class="form-label">الترتيب</label>
-                        <input type="number" name="sort_order" id="edit_sort_order" class="form-control" min="0">
-                    </div>
-                    
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" name="is_active" id="edit_is_active">
-                        <label class="form-check-label" for="edit_is_active">تفعيل</label>
+                        <label for="edit_icon_class" class="form-label">فئة الأيقونة (Icon Class)</label>
+                        <input type="text" name="icon_class" id="edit_icon_class" class="form-control">
+                        <small class="form-text text-muted">مثال: fab fa-facebook-f, fab fa-twitter</small>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -303,30 +287,31 @@ include 'includes/header.php';
 </div>
 
 <script>
-// بيانات الشبكات الاجتماعية
-const socialSettings = <?php echo json_encode($social_settings); ?>;
+// بيانات روابط الشبكات الاجتماعية
+const socialLinks = <?php echo json_encode($social_links); ?>;
 
 function editSocial(socialId) {
-    const social = socialSettings.find(s => s.id == socialId);
-    if (social) {
-        document.getElementById('edit_platform_id').value = social.id;
-        document.getElementById('edit_platform_name').value = social.platform;
-        document.getElementById('edit_url').value = social.url;
-        document.getElementById('edit_username').value = social.username;
-        document.getElementById('edit_sort_order').value = social.sort_order;
-        document.getElementById('edit_is_active').checked = social.is_active == 1;
+    const link = socialLinks.find(s => s.id == socialId);
+    if (link) {
+        document.getElementById('edit_link_id').value = link.id;
+        document.getElementById('edit_platform_name_display').value = link.platform_name;
+        document.getElementById('edit_profile_url').value = link.profile_url;
+        document.getElementById('edit_icon_class').value = link.icon_class;
         
         new bootstrap.Modal(document.getElementById('editSocialModal')).show();
     }
 }
 
-function deleteSocial(socialId, platformName) {
-    if (confirm(`هل أنت متأكد من حذف منصة "${platformName}"؟ لا يمكن التراجع عن هذا الإجراء.`)) {
+function deleteSocial(linkId, platformName) {
+    if (confirm(`هل أنت متأكد من حذف رابط منصة "${platformName}"؟ لا يمكن التراجع عن هذا الإجراء.`)) {
         const form = document.createElement('form');
         form.method = 'POST';
+        const csrfTokenInput = document.querySelector('input[name="<?php echo CSRF_TOKEN_NAME; ?>"]');
+
         form.innerHTML = `
             <input type="hidden" name="action" value="delete_social">
-            <input type="hidden" name="platform_id" value="${socialId}">
+            <input type="hidden" name="link_id" value="${linkId}">
+            <input type="hidden" name="<?php echo CSRF_TOKEN_NAME; ?>" value="${csrfTokenInput ? csrfTokenInput.value : ''}">
         `;
         document.body.appendChild(form);
         form.submit();

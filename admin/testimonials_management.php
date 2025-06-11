@@ -43,38 +43,44 @@ if (isset($_SESSION['message'])) {
                     <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">إجراءات</th>
                 </tr>
             </thead>
+            <thead class="bg-gray-50">
+                <tr>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">اسم المؤلف</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الصورة</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الرأي (مقتطف)</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">تاريخ الإضافة</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">إجراءات</th>
+                </tr>
+            </thead>
             <tbody class="bg-white divide-y divide-gray-200">
                 <?php
-                $testimonials = $db->query("SELECT * FROM testimonials ORDER BY `order` ASC, created_at DESC");
+                // Updated SQL query
+                $testimonials = $db->query("SELECT id, author_name, testimonial_text, author_image_url, created_at FROM testimonials ORDER BY created_at DESC");
                 if (empty($testimonials)): ?>
-                    <tr><td colspan="6" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">لا توجد آراء مضافة حالياً.</td></tr>
+                    <tr><td colspan="5" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">لا توجد آراء مضافة حالياً.</td></tr>
                 <?php else:
                     foreach ($testimonials as $testimonial): ?>
-                    <tr id="testimonial-row-<?php echo $testimonial['testimonial_id']; ?>">
+                    <tr id="testimonial-row-<?php echo $testimonial['id']; ?>"> {/* Use id */}
                         <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($testimonial['client_name']); ?></div>
-                            <div class="text-xs text-gray-500"><?php echo htmlspecialchars($testimonial['client_title_company'] ?? ''); ?></div>
+                            <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($testimonial['author_name']); ?></div>
+                            {/* client_title_company removed */}
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            <?php if ($testimonial['client_photo']): ?>
-                                <img src="<?php echo UPLOAD_URL . htmlspecialchars($testimonial['client_photo']); ?>" alt="<?php echo htmlspecialchars($testimonial['client_name']); ?>" class="h-12 w-12 object-cover rounded-full">
+                            <?php if ($testimonial['author_image_url']): ?>
+                                <img src="<?php echo UPLOAD_URL . htmlspecialchars($testimonial['author_image_url']); ?>" alt="<?php echo htmlspecialchars($testimonial['author_name']); ?>" class="h-12 w-12 object-cover rounded-full">
                             <?php else: ?>
                                 <span class="text-xs text-gray-400">لا يوجد</span>
                             <?php endif; ?>
                         </td>
-                        <td class="px-6 py-4 whitespace-normal text-sm text-gray-700 max-w-sm"><?php echo htmlspecialchars(truncate_text($testimonial['feedback'], 100)); ?></td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $testimonial['is_approved'] ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'; ?>">
-                                <?php echo $testimonial['is_approved'] ? 'معتمد' : 'بانتظار الموافقة'; ?>
-                            </span>
+                        <td class="px-6 py-4 whitespace-normal text-sm text-gray-700 max-w-sm"><?php echo htmlspecialchars(truncate_text($testimonial['testimonial_text'], 100)); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <?php echo date('Y-m-d', strtotime($testimonial['created_at'])); ?>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($testimonial['order']); ?></td>
+                        {/* Status and Order columns removed */}
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-1 space-x-reverse">
-                            <button onclick="openTestimonialModal(<?php echo $testimonial['testimonial_id']; ?>)" class="text-pink-600 hover:text-pink-900" title="تعديل"><i data-feather="edit" class="w-5 h-5"></i></button>
-                            <button onclick="toggleTestimonialApproval(<?php echo $testimonial['testimonial_id']; ?>, this)" class="text-blue-600 hover:text-blue-900" title="<?php echo $testimonial['is_approved'] ? 'إلغاء الموافقة' : 'اعتماد'; ?>">
-                                <i data-feather="<?php echo $testimonial['is_approved'] ? 'eye-off' : 'eye'; ?>" class="w-5 h-5"></i>
-                            </button>
-                            <button onclick="confirmDelete(<?php echo $testimonial['testimonial_id']; ?>, 'testimonial', '<?php echo base_url('admin/ajax_handler.php'); ?>')" class="text-red-600 hover:text-red-900" title="حذف"><i data-feather="trash-2" class="w-5 h-5"></i></button>
+                            <button onclick="openTestimonialModal(<?php echo $testimonial['id']; ?>)" class="text-pink-600 hover:text-pink-900" title="تعديل"><i data-feather="edit" class="w-5 h-5"></i></button>
+                            {/* Toggle Approval button removed */}
+                            <button onclick="confirmDelete(<?php echo $testimonial['id']; ?>, 'delete_testimonial', '<?php echo base_url('admin/ajax_handler.php'); ?>', ' testimonial-row-<?php echo $testimonial['id']; ?>')" class="text-red-600 hover:text-red-900" title="حذف"><i data-feather="trash-2" class="w-5 h-5"></i></button>
                         </td>
                     </tr>
                     <?php endforeach;
@@ -94,39 +100,29 @@ if (isset($_SESSION['message'])) {
         <form id="testimonialForm" action="<?php echo base_url('admin/ajax_handler.php'); ?>" method="POST" enctype="multipart/form-data" class="space-y-4" onsubmit="return ajaxSubmitForm(this, testimonialFormCallback);">
             <?php echo csrf_input_field(); ?>
             <input type="hidden" name="action" value="save_testimonial">
-            <input type="hidden" name="testimonial_id" id="testimonial_id_field" value="0">
+            <input type="hidden" name="testimonial_id" id="testimonial_id_field" value="0"> {/* This will map to id */}
             
             <div class="modal-body">
                 <div>
-                    <label for="client_name" class="block text-sm font-medium text-gray-700 mb-1">اسم العميل <span class="text-red-500">*</span>:</label>
-                    <input type="text" name="client_name" id="client_name" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm">
+                    <label for="author_name" class="block text-sm font-medium text-gray-700 mb-1">اسم المؤلف <span class="text-red-500">*</span>:</label>
+                    <input type="text" name="author_name" id="author_name" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm">
                 </div>
-                <div>
-                    <label for="client_title_company" class="block text-sm font-medium text-gray-700 mb-1">المنصب/الشركة (اختياري):</label>
-                    <input type="text" name="client_title_company" id="client_title_company" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm">
-                </div>
+                {/* client_title_company field removed */}
                 <div>
                     <label for="feedback" class="block text-sm font-medium text-gray-700 mb-1">نص الرأي <span class="text-red-500">*</span>:</label>
                     <textarea name="feedback" id="feedback" rows="5" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm"></textarea>
                 </div>
                 <div>
-                    <label for="client_photo" class="block text-sm font-medium text-gray-700 mb-1">صورة العميل (اختياري):</label>
-                    <input type="file" name="client_photo" id="client_photo" accept="image/*" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100">
-                    <div id="client_photo_preview_container" class="mt-2"></div>
-                    <input type="hidden" name="existing_client_photo" id="existing_client_photo_field">
+                    <label for="author_image_file" class="block text-sm font-medium text-gray-700 mb-1">صورة المؤلف (اختياري):</label>
+                    <input type="file" name="author_image_file" id="author_image_file" accept="image/*" class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-pink-50 file:text-pink-700 hover:file:bg-pink-100">
+                    <div id="author_image_preview_container" class="mt-2"></div>
+                    <input type="hidden" name="existing_author_image_url" id="existing_author_image_url_field">
+                    <label class="inline-flex items-center mt-1 text-xs" id="remove_author_image_label" style="display:none;">
+                        <input type="checkbox" name="remove_author_image" id="remove_author_image_checkbox" value="1" class="form-checkbox h-4 w-4 text-red-600">
+                        <span class="ml-2 text-red-600">إزالة الصورة الحالية</span>
+                    </label>
                 </div>
-                <div>
-                    <label for="rating" class="block text-sm font-medium text-gray-700 mb-1">التقييم (اختياري, 1-5):</label>
-                    <input type="number" name="rating" id="rating" min="1" max="5" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm">
-                </div>
-                 <div>
-                    <label for="order" class="block text-sm font-medium text-gray-700 mb-1">ترتيب الظهور:</label>
-                    <input type="number" name="order" id="order" value="0" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm">
-                </div>
-                <div class="flex items-center">
-                    <input type="checkbox" name="is_approved" id="is_approved" value="1" class="h-4 w-4 text-pink-600 border-gray-300 rounded focus:ring-pink-500">
-                    <label for="is_approved" class="ml-2 block text-sm text-gray-900">معتمد (مرئي في الموقع)</label>
-                </div>
+                {/* Rating, order, and is_approved fields removed */}
             </div>
             <div class="modal-footer bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                 <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-pink-600 text-base font-medium text-white hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 sm:ml-3 sm:w-auto sm:text-sm">
@@ -145,29 +141,31 @@ if (isset($_SESSION['message'])) {
         const form = document.getElementById('testimonialForm');
         form.reset();
         
-        document.getElementById('testimonial_id_field').value = testimonialId;
-        document.getElementById('client_photo_preview_container').innerHTML = '';
-        document.getElementById('existing_client_photo_field').value = '';
-        document.getElementById('client_photo').value = ''; // Clear file input
+        document.getElementById('testimonial_id_field').value = testimonialId; // Maps to 'id'
+        document.getElementById('author_image_preview_container').innerHTML = '';
+        document.getElementById('existing_author_image_url_field').value = '';
+        document.getElementById('author_image_file').value = '';
+        document.getElementById('remove_author_image_checkbox').checked = false;
+        document.getElementById('remove_author_image_label').style.display = 'none';
+
 
         if (testimonialId > 0) {
-            document.getElementById('testimonialModalTitle').textContent = 'تعديل رأي العميل';
+            document.getElementById('testimonialModalTitle').textContent = 'تعديل رأي المؤلف';
+            // Fetch with new field names expected
             fetch(`<?php echo base_url('admin/ajax_handler.php'); ?>?action=get_testimonial_details&id=${testimonialId}&<?php echo CSRF_TOKEN_NAME; ?>=<?php echo generate_csrf_token(); ?>`)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && data.testimonial) {
                         const item = data.testimonial;
-                        document.getElementById('client_name').value = item.client_name || '';
-                        document.getElementById('client_title_company').value = item.client_title_company || '';
-                        document.getElementById('feedback').value = item.feedback || '';
-                        document.getElementById('rating').value = item.rating || '';
-                        document.getElementById('order').value = item.order || 0;
-                        document.getElementById('is_approved').checked = parseInt(item.is_approved) === 1;
+                        document.getElementById('author_name').value = item.author_name || '';
+                        document.getElementById('feedback').value = item.testimonial_text || '';
+                        // Removed client_title_company, rating, order, is_approved
                         
-                        if (item.client_photo) {
-                            document.getElementById('existing_client_photo_field').value = item.client_photo;
-                            const imgPreview = `<img src="<?php echo UPLOAD_URL; ?>${item.client_photo}" class="h-20 w-auto rounded mt-1" alt="Preview"> <button type="button" class="text-red-500 text-xs" onclick="removeTestimonialImagePreview()">إزالة الصورة</button>`;
-                            document.getElementById('client_photo_preview_container').innerHTML = imgPreview;
+                        if (item.author_image_url) {
+                            document.getElementById('existing_author_image_url_field').value = item.author_image_url;
+                            const imgPreview = `<img src="<?php echo UPLOAD_URL; ?>${item.author_image_url}" class="h-20 w-auto rounded mt-1" alt="Preview">`;
+                            document.getElementById('author_image_preview_container').innerHTML = imgPreview;
+                            document.getElementById('remove_author_image_label').style.display = 'inline-flex';
                         }
                     } else {
                         adminPanel.showAlert('فشل تحميل بيانات الرأي: ' + (data.message || 'خطأ غير معروف'), 'error');
@@ -179,20 +177,29 @@ if (isset($_SESSION['message'])) {
                 });
         } else {
             document.getElementById('testimonialModalTitle').textContent = 'إضافة رأي جديد';
-            document.getElementById('is_approved').checked = false; // Default to not approved for new entries
+            // Default values for new entry if any (e.g. is_approved was here, but removed)
         }
         showModal('testimonialModal');
     }
     
-    function removeTestimonialImagePreview() {
-        document.getElementById('existing_client_photo_field').value = ''; 
-        document.getElementById('client_photo_preview_container').innerHTML = '<span class="text-xs text-gray-500">تم تحديد الصورة الحالية للحذف.</span>';
-        document.getElementById('client_photo').value = ''; // Clear file input
-    }
+    // This function is effectively replaced by checking a checkbox 'remove_author_image' during form submission in ajax_handler
+    // The preview can be simply cleared or updated by the file input's onchange event if needed.
+    // For simplicity, direct preview update on remove checkbox click can be added if desired,
+    // but server-side logic will handle the actual removal based on checkbox.
+    // For now, the removeTestimonialImagePreview function is not strictly needed with the checkbox.
+    // Let's ensure the checkbox toggles the preview state.
+    document.getElementById('remove_author_image_checkbox').addEventListener('change', function() {
+        if (this.checked) {
+            document.getElementById('author_image_preview_container').style.opacity = '0.5';
+        } else {
+            document.getElementById('author_image_preview_container').style.opacity = '1';
+        }
+    });
+
 
     function testimonialFormCallback(response) {
         if (response.success) {
-            adminPanel.showAlert(response.message || 'تم حفظ رأي العميل بنجاح!', 'success');
+            adminPanel.showAlert(response.message || 'تم حفظ الرأي بنجاح!', 'success'); // Updated message
             closeModal('testimonialModal');
             setTimeout(() => window.location.reload(), 1000); 
         } else {
@@ -200,47 +207,5 @@ if (isset($_SESSION['message'])) {
         }
     }
 
-    function toggleTestimonialApproval(testimonialId, buttonElement) {
-        const formData = new FormData();
-        formData.append('action', 'toggle_testimonial_approval');
-        formData.append('testimonial_id', testimonialId);
-        formData.append('<?php echo CSRF_TOKEN_NAME; ?>', '<?php echo generate_csrf_token(); ?>');
-
-        fetch('<?php echo base_url('admin/ajax_handler.php'); ?>', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                adminPanel.showAlert(data.message || 'تم تحديث حالة الموافقة.', 'success');
-                // Update UI dynamically
-                const row = document.getElementById(`testimonial-row-${testimonialId}`);
-                if (row) {
-                    const statusSpan = row.querySelector('td:nth-child(4) span');
-                    const iconElement = buttonElement.querySelector('i');
-                    if (data.new_status == 1) {
-                        statusSpan.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800';
-                        statusSpan.textContent = 'معتمد';
-                        buttonElement.title = 'إلغاء الموافقة';
-                        iconElement.setAttribute('data-feather', 'eye-off');
-                    } else {
-                        statusSpan.className = 'px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800';
-                        statusSpan.textContent = 'بانتظار الموافقة';
-                        buttonElement.title = 'اعتماد';
-                        iconElement.setAttribute('data-feather', 'eye');
-                    }
-                    feather.replace(); // Re-render Feather icons
-                } else {
-                     setTimeout(() => window.location.reload(), 1000);
-                }
-            } else {
-                adminPanel.showAlert(data.message || 'فشل تحديث حالة الموافقة.', 'error');
-            }
-        })
-        .catch(error => {
-            adminPanel.showAlert('خطأ في الاتصال بالخادم.', 'error');
-            console.error('Toggle approval error:', error);
-        });
-    }
+    // toggleTestimonialApproval function removed as 'is_approved' field is removed.
 </script>

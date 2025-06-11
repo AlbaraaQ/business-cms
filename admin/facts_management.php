@@ -39,34 +39,38 @@ if (isset($_SESSION['message'])) {
         <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
                 <tr>
-                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">العنوان</th>
-                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الرقم/القيمة</th>
-                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الأيقونة</th>
-                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الترتيب</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">النص</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">القيمة</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">الأيقونة (Class)</th>
+                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">تاريخ الإضافة</th>
                     <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">إجراءات</th>
                 </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
                 <?php
-                $facts = $db->query("SELECT * FROM facts ORDER BY `order` ASC, title ASC");
+                // Updated SQL Query
+                $facts = $db->query("SELECT id, fact_text, fact_value, icon_class, created_at FROM facts ORDER BY created_at DESC");
                 if (empty($facts)): ?>
                     <tr><td colspan="5" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">لا توجد حقائق مضافة حالياً.</td></tr>
                 <?php else:
                     foreach ($facts as $fact): ?>
-                    <tr id="fact-row-<?php echo $fact['fact_id']; ?>">
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($fact['title']); ?></td>
+                    <tr id="fact-row-<?php echo $fact['id']; ?>"> {/* Use id */}
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900"><?php echo htmlspecialchars($fact['fact_text']); ?></td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                            <?php echo htmlspecialchars($fact['prefix'] ?? '') . htmlspecialchars($fact['number']) . htmlspecialchars($fact['suffix'] ?? ''); ?>
+                            <?php echo htmlspecialchars($fact['fact_value']); ?>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <?php if ($fact['icon']): ?>
-                                <i data-feather="<?php echo htmlspecialchars($fact['icon']); ?>" class="inline-block"></i> (<?php echo htmlspecialchars($fact['icon']); ?>)
+                            <?php if ($fact['icon_class']): ?>
+                                <i class="<?php echo htmlspecialchars($fact['icon_class']); ?> inline-block"></i> (<?php echo htmlspecialchars($fact['icon_class']); ?>)
                             <?php else: echo '-'; endif; ?>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><?php echo htmlspecialchars($fact['order']); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <?php echo date('Y-m-d', strtotime($fact['created_at'])); ?>
+                        </td>
+                        {/* Order column removed */}
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-1 space-x-reverse">
-                            <button onclick="openFactModal(<?php echo $fact['fact_id']; ?>)" class="text-pink-600 hover:text-pink-900" title="تعديل"><i data-feather="edit" class="w-5 h-5"></i></button>
-                            <button onclick="confirmDelete(<?php echo $fact['fact_id']; ?>, 'fact', '<?php echo base_url('admin/ajax_handler.php'); ?>')" class="text-red-600 hover:text-red-900" title="حذف"><i data-feather="trash-2" class="w-5 h-5"></i></button>
+                            <button onclick="openFactModal(<?php echo $fact['id']; ?>)" class="text-pink-600 hover:text-pink-900" title="تعديل"><i data-feather="edit" class="w-5 h-5"></i></button>
+                            <button onclick="confirmDelete(<?php echo $fact['id']; ?>, 'delete_fact', '<?php echo base_url('admin/ajax_handler.php'); ?>', 'fact-row-<?php echo $fact['id']; ?>')" class="text-red-600 hover:text-red-900" title="حذف"><i data-feather="trash-2" class="w-5 h-5"></i></button>
                         </td>
                     </tr>
                     <?php endforeach;
@@ -86,38 +90,24 @@ if (isset($_SESSION['message'])) {
         <form id="factForm" action="<?php echo base_url('admin/ajax_handler.php'); ?>" method="POST" class="space-y-4" onsubmit="return ajaxSubmitForm(this, factFormCallback);">
             <?php echo csrf_input_field(); ?>
             <input type="hidden" name="action" value="save_fact">
-            <input type="hidden" name="fact_id" id="fact_id_field" value="0">
+            <input type="hidden" name="fact_id" id="fact_id_field" value="0"> {/* Maps to id */}
             
             <div class="modal-body">
                 <div>
-                    <label for="fact_title" class="block text-sm font-medium text-gray-700 mb-1">العنوان <span class="text-red-500">*</span>:</label>
-                    <input type="text" name="title" id="fact_title" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm">
+                    <label for="fact_text_input" class="block text-sm font-medium text-gray-700 mb-1">نص الحقيقة <span class="text-red-500">*</span>:</label>
+                    <input type="text" name="fact_text" id="fact_text_input" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm">
                 </div>
                 <div>
-                    <label for="fact_number" class="block text-sm font-medium text-gray-700 mb-1">الرقم/القيمة <span class="text-red-500">*</span>:</label>
-                    <input type="text" name="number" id="fact_number" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm" placeholder="مثال: 100 أو 25+">
+                    <label for="fact_value_input" class="block text-sm font-medium text-gray-700 mb-1">القيمة <span class="text-red-500">*</span>:</label>
+                    <input type="text" name="fact_value" id="fact_value_input" required class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm" placeholder="مثال: 100 أو +25 مشروعاً">
                 </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label for="fact_prefix" class="block text-sm font-medium text-gray-700 mb-1">بادئة (اختياري):</label>
-                        <input type="text" name="prefix" id="fact_prefix" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm" placeholder="مثال: $">
-                    </div>
-                    <div>
-                        <label for="fact_suffix" class="block text-sm font-medium text-gray-700 mb-1">لاحقة (اختياري):</label>
-                        <input type="text" name="suffix" id="fact_suffix" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm" placeholder="مثال: + أو %">
-                    </div>
-                </div>
+                {/* Prefix and Suffix fields removed */}
                 <div>
-                    <label for="fact_icon" class="block text-sm font-medium text-gray-700 mb-1">الأيقونة (اسم أيقونة Feather - اختياري):</label>
-                    <input type="text" name="icon" id="fact_icon" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm ltr text-left" placeholder="e.g., package, users, award">
-                     <p class="text-xs text-gray-500 mt-1">راجع <a href="https://feathericons.com/" target="_blank" class="text-pink-600 hover:underline">مكتبة Feather Icons</a> للأسماء.</p>
+                    <label for="fact_icon_class_input" class="block text-sm font-medium text-gray-700 mb-1">الأيقونة (Font Awesome Class - اختياري):</label>
+                    <input type="text" name="icon_class" id="fact_icon_class_input" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm ltr text-left" placeholder="e.g., fas fa-briefcase">
+                     <p class="text-xs text-gray-500 mt-1">راجع <a href="https://fontawesome.com/icons" target="_blank" class="text-pink-600 hover:underline">مكتبة Font Awesome</a> للأسماء.</p>
                 </div>
-                 <div>
-                    <label for="fact_order" class="block text-sm font-medium text-gray-700 mb-1">ترتيب الظهور:</label>
-                    <input type="number" name="order" id="fact_order" value="0" min="0" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-pink-500 focus:border-pink-500 sm:text-sm">
-                </div>
-                <!-- Hidden field for homepage_section_id if needed in future -->
-                <!-- <input type="hidden" name="homepage_section_id" id="fact_homepage_section_id" value=""> -->
+                {/* Order field removed */}
             </div>
             <div class="modal-footer bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                 <button type="submit" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-pink-600 text-base font-medium text-white hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 sm:ml-3 sm:w-auto sm:text-sm">
@@ -139,18 +129,15 @@ if (isset($_SESSION['message'])) {
 
         if (factId > 0) {
             document.getElementById('factModalTitle').textContent = 'تعديل الحقيقة';
-            fetch(`<?php echo base_url('admin/ajax_handler.php'); ?>?action=get_fact_details&id=${factId}&<?php echo CSRF_TOKEN_NAME; ?>=<?php echo generate_csrf_token(); ?>`)
+            fetch(`<?php echo base_url('admin/ajax_handler.php'); ?>?action=get_fact_details&id=${factId}&<?php echo CSRF_TOKEN_NAME; ?>=<?php echo generate_csrf_token(); ?>`) // Ensure CSRF for GET if needed, or remove
                 .then(response => response.json())
                 .then(data => {
                     if (data.success && data.fact) {
                         const item = data.fact;
-                        document.getElementById('fact_title').value = item.title || '';
-                        document.getElementById('fact_number').value = item.number || '';
-                        document.getElementById('fact_icon').value = item.icon || '';
-                        document.getElementById('fact_prefix').value = item.prefix || '';
-                        document.getElementById('fact_suffix').value = item.suffix || '';
-                        document.getElementById('fact_order').value = item.order || 0;
-                        // document.getElementById('fact_homepage_section_id').value = item.homepage_section_id || '';
+                        document.getElementById('fact_text_input').value = item.fact_text || '';
+                        document.getElementById('fact_value_input').value = item.fact_value || '';
+                        document.getElementById('fact_icon_class_input').value = item.icon_class || '';
+                        // prefix, suffix, order removed
                     } else {
                         adminPanel.showAlert('فشل تحميل بيانات الحقيقة: ' + (data.message || 'خطأ غير معروف'), 'error');
                     }

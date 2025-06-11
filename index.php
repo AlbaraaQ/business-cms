@@ -16,13 +16,22 @@ require_once 'includes/functions/project_functions.php';
 $page_title = 'الصفحة الرئيسية';
 
 // الحصول على الخدمات المميزة
-$featured_services = get_featured_services(6);
+$featured_services = get_featured_services(6); // Updated function
 
 // الحصول على المشاريع المميزة
-$featured_projects = get_featured_projects(6);
+$featured_projects = get_featured_projects(6); // Updated function
 
 // الحصول على إعدادات SEO للصفحة الرئيسية
-$seo_settings = get_page_seo_settings('home');
+// Ensure admin_seo_functions.php is included or get_seo_settings_by_page_name is accessible
+// For now, assuming get_seo_for_page is the correct public wrapper from includes/functions.php
+if (function_exists('get_seo_for_page')) {
+    $seo_settings = get_seo_for_page('home');
+} else {
+    // Fallback or error if the function isn't available
+    $seo_settings = ['meta_title' => $page_title, 'meta_description' => '', 'meta_keywords' => ''];
+    log_error("get_seo_for_page function not found for index.php");
+}
+
 
 // تضمين رأس الصفحة
 include 'includes/header.php';
@@ -60,20 +69,18 @@ include 'includes/header.php';
                 <?php foreach ($featured_services as $service): ?>
                     <div class="col-md-6 col-lg-4 mb-4">
                         <div class="card service-card h-100">
-                            <?php if (!empty($service['image'])): ?>
-                                <img src="<?php echo UPLOAD_URL . htmlspecialchars($service['image']); ?>" class="card-img-top lazy" alt="<?php echo htmlspecialchars($service['title']); ?>" loading="lazy">
-                            <?php endif; ?>
-                            <div class="card-body">
+                            {/* Image display removed for services on homepage as per new schema (no direct image_url) */}
+                            <div class="card-body text-center"> {/* Added text-center for icon */}
                                 <h3 class="card-title">
-                                    <?php if (!empty($service['icon'])): ?>
-                                        <i class="icon" data-feather="<?php echo htmlspecialchars($service['icon']); ?>"></i>
+                                    <?php if (!empty($service['icon_class'])): ?>
+                                        <i class="<?php echo htmlspecialchars($service['icon_class']); ?> fa-3x mb-3 d-block"></i> {/* Display icon_class */}
                                     <?php endif; ?>
-                                    <?php echo htmlspecialchars($service['title']); ?>
+                                    <?php echo htmlspecialchars($service['name']); ?> {/* Use name */}
                                 </h3>
-                                <p class="card-text"><?php echo truncate_text($service['short_description'], 120); ?></p>
+                                <p class="card-text"><?php echo truncate_text(htmlspecialchars($service['description']), 120); ?></p> {/* Use description */}
                             </div>
-                            <div class="card-footer bg-transparent border-0">
-                                <a href="service-details.php?slug=<?php echo htmlspecialchars($service['slug']); ?>" class="btn btn-outline-primary">عرض التفاصيل</a>
+                            <div class="card-footer bg-transparent border-0 text-center">
+                                <a href="service-details.php?id=<?php echo htmlspecialchars($service['id']); ?>" class="btn btn-outline-primary">عرض التفاصيل</a> {/* Link to id */}
                             </div>
                         </div>
                     </div>
@@ -148,18 +155,16 @@ include 'includes/header.php';
                 <?php foreach ($featured_projects as $project): ?>
                     <div class="col-md-6 col-lg-4 mb-4">
                         <div class="card project-card h-100">
-                            <?php if (!empty($project['main_image'])): ?>
-                                <img src="<?php echo UPLOAD_URL . htmlspecialchars($project['main_image']); ?>" class="card-img-top lazy" alt="<?php echo htmlspecialchars($project['title']); ?>" loading="lazy">
+                            <?php if (!empty($project['image_url'])): ?>
+                                <img src="<?php echo UPLOAD_URL . htmlspecialchars($project['image_url']); ?>" class="card-img-top lazy" alt="<?php echo htmlspecialchars($project['title']); ?>" loading="lazy">
                             <?php endif; ?>
                             <div class="card-body">
                                 <h3 class="card-title"><?php echo htmlspecialchars($project['title']); ?></h3>
-                                <p class="card-text"><?php echo truncate_text($project['short_description'], 120); ?></p>
-                                <?php if (!empty($project['category'])): ?>
-                                    <span class="badge bg-primary"><?php echo htmlspecialchars($project['category']); ?></span>
-                                <?php endif; ?>
+                                <p class="card-text"><?php echo truncate_text(htmlspecialchars($project['description']), 120); ?></p> {/* Use description */}
+                                {/* Category display removed */}
                             </div>
                             <div class="card-footer bg-transparent border-0">
-                                <a href="project-details.php?slug=<?php echo htmlspecialchars($project['slug']); ?>" class="btn btn-outline-primary">عرض المشروع</a>
+                                <a href="project-details.php?id=<?php echo htmlspecialchars($project['id']); ?>" class="btn btn-outline-primary">عرض المشروع</a> {/* Link to id */}
                             </div>
                         </div>
                     </div>

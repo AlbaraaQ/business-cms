@@ -17,7 +17,8 @@ $stats = [
 try {
     $stats['services_count'] = $db->queryOne("SELECT COUNT(*) as count FROM services")['count'] ?? 0;
     $stats['projects_count'] = $db->queryOne("SELECT COUNT(*) as count FROM projects")['count'] ?? 0;
-    $stats['testimonials_count'] = $db->queryOne("SELECT COUNT(*) as count FROM testimonials WHERE is_approved = 1")['count'] ?? 0;
+    // Updated testimonials count query - removed WHERE is_approved = 1
+    $stats['testimonials_count'] = $db->queryOne("SELECT COUNT(*) as count FROM testimonials")['count'] ?? 0;
     $stats['users_count'] = $db->queryOne("SELECT COUNT(*) as count FROM users")['count'] ?? 0;
 } catch (Exception $e) {
     log_error("Dashboard stats query failed: " . $e->getMessage());
@@ -58,7 +59,7 @@ try {
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-4xl font-bold"><?php echo htmlspecialchars($stats['testimonials_count']); ?></p>
-                    <p class="text-lg">آراء العملاء (المعتمدة)</p>
+                    <p class="text-lg">آراء العملاء</p> {/* Label updated */}
                 </div>
                  <div class="bg-white bg-opacity-20 p-3 rounded-full">
                    <svg class="w-8 h-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-3.861 8.25-8.625 8.25S3.75 16.556 3.75 12c0-4.556 3.861-8.25 8.625-8.25S21 7.444 21 12z" /></svg>

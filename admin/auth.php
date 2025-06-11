@@ -61,10 +61,10 @@ if ($action === 'logout') {
     }
 
     try {
-        $user = $db->queryOne("SELECT password_hash FROM users WHERE user_id = ?", [$_SESSION['admin_user_id']]);
+        $user = $db->queryOne("SELECT password_hash FROM users WHERE id = ?", [$_SESSION['admin_user_id']]);
         if ($user && password_verify($current_password, $user['password_hash'])) {
             $new_password_hash = password_hash($new_password, PASSWORD_DEFAULT);
-            $db->execute("UPDATE users SET password_hash = ? WHERE user_id = ?", [$new_password_hash, $_SESSION['admin_user_id']]);
+            $db->execute("UPDATE users SET password_hash = ? WHERE id = ?", [$new_password_hash, $_SESSION['admin_user_id']]);
             
             // Forcing re-login after password change is good practice
             session_unset();

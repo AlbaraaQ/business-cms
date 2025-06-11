@@ -60,10 +60,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // تسجيل النشاط
-            log_activity($_SESSION['admin_id'], 'optimize_all_images', 'images', null, [
-                'optimized_count' => $optimized_count,
-                'total_saved' => $total_saved
-            ]);
+            // log_activity($_SESSION['admin_id'], 'optimize_all_images', 'images', null, [
+            //     'optimized_count' => $optimized_count,
+            //     'total_saved' => $total_saved
+            // ]);
             
             $success_message = "تم تحسين {$optimized_count} صورة وتوفير " . format_file_size($total_saved) . " من المساحة";
             break;
@@ -79,12 +79,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $saved = $original_size - $new_size;
                     
                     // تسجيل النشاط
-                    log_activity($_SESSION['admin_id'], 'optimize_single_image', 'images', null, [
-                        'image_path' => $image_path,
-                        'original_size' => $original_size,
-                        'new_size' => $new_size,
-                        'saved' => $saved
-                    ]);
+                    // log_activity($_SESSION['admin_id'], 'optimize_single_image', 'images', null, [
+                    //     'image_path' => $image_path,
+                    //     'original_size' => $original_size,
+                    //     'new_size' => $new_size,
+                    //     'saved' => $saved
+                    // ]);
                     
                     if ($saved > 0) {
                         $success_message = "تم تحسين الصورة وتوفير " . format_file_size($saved) . " من المساحة";
@@ -107,10 +107,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if ($webp_path) {
                     // تسجيل النشاط
-                    log_activity($_SESSION['admin_id'], 'convert_to_webp', 'images', null, [
-                        'original_path' => $image_path,
-                        'webp_path' => $webp_path
-                    ]);
+                    // log_activity($_SESSION['admin_id'], 'convert_to_webp', 'images', null, [
+                    //     'original_path' => $image_path,
+                    //     'webp_path' => $webp_path
+                    // ]);
                     
                     $success_message = "تم تحويل الصورة إلى تنسيق WebP بنجاح";
                 } else {
@@ -150,12 +150,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             // تسجيل النشاط
-            log_activity($_SESSION['admin_id'], 'resize_images', 'images', null, [
-                'resized_count' => $resized_count,
-                'max_width' => $max_width,
-                'max_height' => $max_height,
-                'quality' => $quality
-            ]);
+            // log_activity($_SESSION['admin_id'], 'resize_images', 'images', null, [
+            //     'resized_count' => $resized_count,
+            //     'max_width' => $max_width,
+            //     'max_height' => $max_height,
+            //     'quality' => $quality
+            // ]);
             
             $success_message = "تم تغيير حجم {$resized_count} صورة";
             break;
